@@ -1,11 +1,4 @@
 services:
-  app:
-    build: .
-    container_name: wth-edge-app
-    network_mode: host
-    env_file:
-      - .env
-    restart: unless-stopped
   mediamtx:
     image: bluenviron/mediamtx:1-rpi
     container_name: mediamtx
