@@ -1,0 +1,9 @@
+paths:
+  cam:
+    source: rpiCamera
+    # optional tuning:
+    rpiCameraWidth: 1280
+    rpiCameraHeight: 720
+    rpiCameraFPS: 25
+    rpiCameraAfMode: manual
+    rpiCameraLensPosition: 0.0
