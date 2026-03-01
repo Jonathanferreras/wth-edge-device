@@ -1,0 +1,26 @@
+[Unit]
+Description=WTH Edge Device
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=[user]
+WorkingDirectory=[path-to-project]
+
+# Load env vars (MQTT_BROKER, MQTT_PORT, etc.)
+EnvironmentFile=[path-to-project]/.env
+
+# Run with the venv python; -u makes logs show up immediately in journald
+ExecStart=[path-to-project]/.venv/bin/python -u [path-to-project]/main.py
+
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=15
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
