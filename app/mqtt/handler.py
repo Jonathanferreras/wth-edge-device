@@ -9,6 +9,7 @@ import time
 from dotenv import load_dotenv
 from app.mqtt.client import mqtt_client
 from app.mqtt.topics import DEVICE_TELEMETRY, TEST
+from app.mqtt.events.boat_detection_manager import BoatDetectionManager
 from app.mqtt.events.telemetry_manager import TelemetryManager
 
 load_dotenv()
@@ -16,9 +17,12 @@ load_dotenv()
 MQTT_BROKER = os.getenv("MQTT_BROKER", "")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 telemetry_manager = TelemetryManager()
+boat_detection_manager = BoatDetectionManager()
 loop = asyncio.new_event_loop()
 _stop_telemetry = threading.Event()
 _telemetry_thread: threading.Thread | None = None
+_stop_boat_detection = threading.Event()
+_boat_detection_thread: threading.Thread | None = None
 
 logger = logging.getLogger("mqtt_handler")
 logger.setLevel(logging.DEBUG)
@@ -48,8 +52,13 @@ def _telemetry_publisher_loop():
         _stop_telemetry.wait(60)
     logger.info("Telemetry publisher loop stopped.")
 
+def _boat_detection_loop():
+    logger.info("Boat detection loop started.")
+    boat_detection_manager.start_detection_loop(mqtt_client, _stop_boat_detection)
+    logger.info("Boat detection loop stopped.")
+
 def on_connect(client, userdata, flags, reason_code, properties):
-    global _telemetry_thread
+    global _telemetry_thread, _boat_detection_thread
 
     if reason_code == 0:
         logger.info("Connected to MQTT Broker!")
@@ -60,6 +69,11 @@ def on_connect(client, userdata, flags, reason_code, properties):
             _stop_telemetry.clear()
             _telemetry_thread = threading.Thread(target=_telemetry_publisher_loop, daemon=True)
             _telemetry_thread.start()
+
+        if _boat_detection_thread is None or not _boat_detection_thread.is_alive():
+            _stop_boat_detection.clear()
+            _boat_detection_thread = threading.Thread(target=_boat_detection_loop, daemon=True)
+            _boat_detection_thread.start()
 
     else:
         logger.error(f"Failed to connect to MQTT Broker! Reason: {reason_code}")
@@ -104,6 +118,7 @@ def handle_exit(signal_received, frame):
     logger.info("Shutting down... Disconnecting MQTT...")
 
     _stop_telemetry.set()
+    _stop_boat_detection.set()
 
     try:
         payload = telemetry_manager.generate_telemetry_report()

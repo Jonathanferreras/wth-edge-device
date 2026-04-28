@@ -1,2 +1,4 @@
 paho-mqtt 
 python-dotenv
+opencv-python-headless
+ultralytics
