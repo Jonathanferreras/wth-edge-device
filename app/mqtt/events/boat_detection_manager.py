@@ -32,6 +32,9 @@ class BoatDetectionManager:
         self.left_is = os.getenv("BOAT_LEFT_IS", "WEST")
         self.right_is = os.getenv("BOAT_RIGHT_IS", "EAST")
         self.direction_lock_threshold_px = int(os.getenv("BOAT_DIRECTION_LOCK_THRESHOLD_PX", "15"))
+        self.image_crop_padding_px = int(os.getenv("BOAT_IMAGE_CROP_PADDING_PX", "40"))
+        self.image_max_width = int(os.getenv("BOAT_IMAGE_MAX_WIDTH", "640"))
+        self.image_jpeg_quality = int(os.getenv("BOAT_IMAGE_JPEG_QUALITY", "75"))
         self.capture_mode = cv2.CAP_FFMPEG
         self.model = self.load_model()
         self.logger = logging.getLogger("boat_detection_manager")
@@ -189,9 +192,33 @@ class BoatDetectionManager:
 
         frame = self.screenshot_frame.copy()
         x1, y1, x2, y2 = self.screenshot_box
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        frame_height, frame_width = frame.shape[:2]
+        padding = max(0, self.image_crop_padding_px)
+        crop_x1 = max(0, x1 - padding)
+        crop_y1 = max(0, y1 - padding)
+        crop_x2 = min(frame_width, x2 + padding)
+        crop_y2 = min(frame_height, y2 + padding)
 
-        ok, image_buffer = cv2.imencode(".jpg", frame)
+        crop = frame[crop_y1:crop_y2, crop_x1:crop_x2].copy()
+        cv2.rectangle(
+            crop,
+            (x1 - crop_x1, y1 - crop_y1),
+            (x2 - crop_x1, y2 - crop_y1),
+            (0, 255, 0),
+            2,
+        )
+
+        crop_height, crop_width = crop.shape[:2]
+        if crop_width > self.image_max_width > 0:
+            scale = self.image_max_width / crop_width
+            resized_height = max(1, int(round(crop_height * scale)))
+            crop = cv2.resize(crop, (self.image_max_width, resized_height), interpolation=cv2.INTER_AREA)
+
+        ok, image_buffer = cv2.imencode(
+            ".jpg",
+            crop,
+            [int(cv2.IMWRITE_JPEG_QUALITY), self.image_jpeg_quality],
+        )
         if not ok:
             self.logger.warning("Failed to encode boat detection image.")
             return None, None
@@ -204,7 +231,7 @@ class BoatDetectionManager:
             qos=1,
             retain=False,
         )
-        self.logger.info("Published boat detection image.")
+        self.logger.info("Published boat detection image (%d bytes).", len(image_buffer))
         return image_id, image_topic
 
     def process_frame(self, frame, mqtt_client):
