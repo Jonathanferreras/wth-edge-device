@@ -3,9 +3,12 @@ import logging
 import os
 import time
 from datetime import datetime, timezone
+from pathlib import Path
+
 import cv2
+import numpy as np
 from dotenv import load_dotenv
-from ultralytics import YOLO
+
 from app.mqtt.topics import BOAT_DETECTION, BOAT_DETECTION_IMAGE
 
 load_dotenv()
@@ -14,20 +17,23 @@ load_dotenv()
 class BoatDetectionManager:
     def __init__(self):
         self.stream_url = os.getenv("CAMERA_STREAM_URL", "rtsp://127.0.0.1:8554/cam")
-        self.model_path = "yolov8s.pt"
-        self.boat_class_id = 8
-        self.confidence_threshold = 0.2
-        self.grace_period_seconds = 60
-        self.reconnect_delay_seconds = 2
-        self.roi_width = 700
-        self.roi_height = 100
-        self.roi_x_offset = 300
-        self.roi_y_offset = 200
-        self.left_is = "WEST"
-        self.right_is = "EAST"
-        self.direction_lock_threshold_px = 15
+        default_model_path = Path(__file__).resolve().parents[2] / "models" / "yolov8s.onnx"
+        self.model_path = os.getenv("BOAT_DETECTION_MODEL", str(default_model_path))
+        self.boat_class_id = int(os.getenv("BOAT_CLASS_ID", "8"))
+        self.confidence_threshold = float(os.getenv("BOAT_DETECTION_CONFIDENCE", "0.2"))
+        self.nms_threshold = float(os.getenv("BOAT_DETECTION_NMS_THRESHOLD", "0.45"))
+        self.model_input_size = int(os.getenv("BOAT_DETECTION_INPUT_SIZE", "640"))
+        self.grace_period_seconds = int(os.getenv("BOAT_GRACE_PERIOD_SECONDS", "60"))
+        self.reconnect_delay_seconds = float(os.getenv("CAMERA_RECONNECT_DELAY_SECONDS", "2"))
+        self.roi_width = int(os.getenv("BOAT_ROI_WIDTH", "700"))
+        self.roi_height = int(os.getenv("BOAT_ROI_HEIGHT", "100"))
+        self.roi_x_offset = int(os.getenv("BOAT_ROI_X_OFFSET", "300"))
+        self.roi_y_offset = int(os.getenv("BOAT_ROI_Y_OFFSET", "200"))
+        self.left_is = os.getenv("BOAT_LEFT_IS", "WEST")
+        self.right_is = os.getenv("BOAT_RIGHT_IS", "EAST")
+        self.direction_lock_threshold_px = int(os.getenv("BOAT_DIRECTION_LOCK_THRESHOLD_PX", "15"))
         self.capture_mode = cv2.CAP_FFMPEG
-        self.model = YOLO(self.model_path)
+        self.model = self.load_model()
         self.logger = logging.getLogger("boat_detection_manager")
         self.logger.setLevel(logging.INFO)
         self.reset_event()
@@ -51,6 +57,35 @@ class BoatDetectionManager:
         y2 = y1 + self.roi_height
         return max(0, x1), max(0, y1), min(width, x2), min(height, y2)
 
+    def letterbox(self, image, color=(114, 114, 114)):
+        height, width = image.shape[:2]
+        scale = min(self.model_input_size / height, self.model_input_size / width)
+        resized_width = int(round(width * scale))
+        resized_height = int(round(height * scale))
+        resized = cv2.resize(image, (resized_width, resized_height), interpolation=cv2.INTER_LINEAR)
+
+        pad_w = self.model_input_size - resized_width
+        pad_h = self.model_input_size - resized_height
+        pad_left = pad_w // 2
+        pad_right = pad_w - pad_left
+        pad_top = pad_h // 2
+        pad_bottom = pad_h - pad_top
+
+        bordered = cv2.copyMakeBorder(
+            resized,
+            pad_top,
+            pad_bottom,
+            pad_left,
+            pad_right,
+            cv2.BORDER_CONSTANT,
+            value=color,
+        )
+
+        return bordered, scale, pad_left, pad_top
+
+    def load_model(self):
+        return cv2.dnn.readNetFromONNX(self.model_path)
+
     def get_direction(self, center_x):
         if self.event_start_x is None:
             self.event_start_x = center_x
@@ -66,25 +101,61 @@ class BoatDetectionManager:
         return f"{self.right_is} to {self.left_is}"
 
     def get_best_boat(self, roi):
-        results = self.model.predict(
-            source=roi,
-            conf=self.confidence_threshold,
-            classes=[self.boat_class_id],
-            verbose=False,
+        input_image, scale, pad_left, pad_top = self.letterbox(roi)
+        blob = cv2.dnn.blobFromImage(
+            input_image,
+            scalefactor=1 / 255.0,
+            size=(self.model_input_size, self.model_input_size),
+            swapRB=True,
+            crop=False,
         )
+        self.model.setInput(blob)
+        predictions = self.model.forward()[0].T
 
-        best_boat = None
-        best_confidence = 0.0
+        roi_height, roi_width = roi.shape[:2]
+        boxes = []
+        confidences = []
 
-        for result in results:
-            for box in result.boxes:
-                confidence = float(box.conf[0])
+        for prediction in predictions:
+            class_scores = prediction[4:]
+            class_id = int(np.argmax(class_scores))
+            confidence = float(class_scores[class_id])
 
-                if confidence > best_confidence:
-                    best_confidence = confidence
-                    best_boat = box
+            if class_id != self.boat_class_id or confidence < self.confidence_threshold:
+                continue
 
-        return best_boat, best_confidence
+            center_x, center_y, width, height = prediction[:4]
+            x1 = (center_x - width / 2 - pad_left) / scale
+            y1 = (center_y - height / 2 - pad_top) / scale
+            x2 = (center_x + width / 2 - pad_left) / scale
+            y2 = (center_y + height / 2 - pad_top) / scale
+
+            x1 = max(0, min(int(round(x1)), roi_width - 1))
+            y1 = max(0, min(int(round(y1)), roi_height - 1))
+            x2 = max(0, min(int(round(x2)), roi_width - 1))
+            y2 = max(0, min(int(round(y2)), roi_height - 1))
+
+            if x2 <= x1 or y2 <= y1:
+                continue
+
+            boxes.append([x1, y1, x2 - x1, y2 - y1])
+            confidences.append(confidence)
+
+        if not boxes:
+            return None, 0.0
+
+        indices = cv2.dnn.NMSBoxes(boxes, confidences, self.confidence_threshold, self.nms_threshold)
+        if len(indices) == 0:
+            return None, 0.0
+
+        flattened_indices = np.array(indices).flatten()
+        best_index = max(flattened_indices, key=lambda idx: confidences[idx])
+        x1, y1, width, height = boxes[best_index]
+
+        return {
+            "box": (x1, y1, x1 + width, y1 + height),
+            "confidence": confidences[best_index],
+        }, confidences[best_index]
 
     def publish_detection_event(self, mqtt_client, center_x):
         image_id, image_topic = self.publish_detection_image(mqtt_client)
@@ -150,7 +221,7 @@ class BoatDetectionManager:
                     self.reset_event()
             return
 
-        bx1, by1, bx2, by2 = map(int, best_boat.xyxy[0])
+        bx1, by1, bx2, by2 = best_boat["box"]
         center_x = (x1 + bx1 + x1 + bx2) // 2
 
         self.screenshot_frame = frame
