@@ -39,11 +39,12 @@ SCANLINE_DIM = 0.55
 
 # ---------------------------------------------------------------- sprites
 # Mallard drake facing right, sitting on the water: green head, white collar, brown chest,
-# grey body, blue-violet speculum, black tail curl. The bottom row is the waterline.
+# grey body, blue-violet speculum, black tail curl, and a wraparound cyan visor with a
+# magenta tip. The bottom row is the waterline.
 MALLARD = Sprite("""
 ..............KKKK....
 .............KHHHHK...
-............KHHHHKHK..
+............KKQQQQQFK.
 ............KHHHHHHKKK
 ............KHHHHHHYYYK
 .............KHHHHKYYK
@@ -56,7 +57,9 @@ KKKKKgggggggggggBBBBK.
 ...KgggggggggggggggK..
 ....KKKKKKKKKKKKKKK...
 """)
-MALLARD_BLINK = Sprite(MALLARD.rows[:2] + ["............KHHHHHHK..", "............KHHHKKHKKK"] + MALLARD.rows[4:])
+# "Blink": the visor dims for a beat.
+MALLARD_BLINK = Sprite(MALLARD.rows[:2] + ["............KKVVVVVQK."] + MALLARD.rows[3:])
+VISOR_ROW, VISOR_X0, VISOR_X1 = 2, 14, 19   # lens pixels in MALLARD, for the moving glint
 # Quack: bill open.
 MALLARD_QUACK = Sprite(MALLARD.rows[:3] + [
     "............KHHHHHHKKKK",
@@ -71,7 +74,7 @@ KKKKK.................
 ..KKKKK...............
 ....KKggKKKKKKK.......
 .....KggggggggBBK.....
-......KgggggggggBBKHHK
+......KgggggggggBBKQQK
 ......KGGGGGggggggBHHK
 .......KVVbbGGgggggKYYK
 ........KggggggggggK.K
@@ -87,7 +90,7 @@ KKKK...
 """)
 MALLARD_SLEEP = Sprite("""
 .........KKKKK........
-........KHHHHHK.......
+........KVVVVVK.......
 .K.....KHHKKHHHK......
 KWK..KKKHHHHHHHKK.....
 KKKKKggKKWWWWWKBBK....
@@ -101,9 +104,9 @@ MALLARD_FACE = Sprite("""
 .....KKHHHHHHKK.....
 ....KHHHHHHHHHHK....
 ...KHHHHHHHHHHHHK...
-...KHKKHHHHHHKKHK...
-...KHKWHHHHHHKWHK...
-...KHHHHHHHHHHHHK...
+..KKKKKKKKKKKKKKKK..
+..KQQQQQQQQQQQQQFK..
+..KKQQQQQQQQQQQQKK..
 ...KHHHHKKKKHHHHK...
 ...KHHHKYYYYKHHHK...
 ...KHHKYYYYYYKHHK...
@@ -114,7 +117,8 @@ MALLARD_FACE = Sprite("""
 ....KBBBBBBBBBBK....
 ...KBBBBBBBBBBBBK...
 """)
-MALLARD_FACE_BLINK = Sprite(MALLARD_FACE.rows[:4] + ["...KHHHHHHHHHHHHK...", "...KHKKHHHHHHKKHK..."] + MALLARD_FACE.rows[6:])
+MALLARD_FACE_BLINK = Sprite(MALLARD_FACE.rows[:5] + ["..KVVVVVVVVVVVVVQK..", "..KKVVVVVVVVVVVVKK.."] + MALLARD_FACE.rows[7:])
+FACE_VISOR_ROW, FACE_VISOR_X0, FACE_VISOR_X1 = 5, 3, 16
 
 BOAT = Sprite("""
 .....Q.....
@@ -300,13 +304,18 @@ def canal_scene(t: int, lift: float = 0.0, on_water=None, night: bool = False) -
 
 
 def _duck(img: Image.Image, sprite: Sprite, t: int, bob: int = 0, x: int = DUCK_X) -> None:
-    stamp(img, sprite, x, DUCK_WATERLINE - sprite.h + 1 + bob)
+    y = DUCK_WATERLINE - sprite.h + 1 + bob
+    stamp(img, sprite, x, y)
+    if sprite is MALLARD or (sprite.h == MALLARD.h and sprite is not MALLARD_BLINK):
+        k = VISOR_X0 + t % 16  # a white glint sweeps across the lens now and then
+        if k < VISOR_X1:
+            put(img, x + k, y + VISOR_ROW, "W")
     ripples(img, x + 3, DUCK_WATERLINE, sprite.w - 6, t)
 
 
 # ---------------------------------------------------------------- scenes
 def boot():
-    """Cyan ring draws in, the mallard rises, the title types out in neon, then a glitch and a blink."""
+    """Cyan ring draws in, the mallard rises, the title types out in neon, a glitch, a visor glint."""
     frames, durs = [], []
     face_x, face_y = 20, 4   # drawn at 2x: 40x32 art pixels
     shelf = 40
@@ -351,8 +360,15 @@ def boot():
     final = frames[-1]
     blink = final.copy()
     stamp(blink, MALLARD_FACE_BLINK, face_x, face_y, scale=2)
-    frames += [final, glitch(final, 1, 4), glitch(final, 2, 2), final, blink, final]
-    durs += [500, 70, 70, 400, 140, 900]
+    sweep = []
+    for k in range(FACE_VISOR_X0, FACE_VISOR_X1, 2):  # visor glint sweeps left to right
+        fr = final.copy()
+        for dy in range(2):
+            for dx in range(4):
+                put(fr, face_x + k * 2 + dx - dy, face_y + FACE_VISOR_ROW * 2 + dy, "W")
+        sweep.append(fr)
+    frames += [final, glitch(final, 1, 4), glitch(final, 2, 2), final, *sweep, final, blink, final]
+    durs += [400, 70, 70, 250, *[40] * len(sweep), 300, 140, 900]
     return frames, durs, False
 
 
