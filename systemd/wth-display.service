@@ -9,6 +9,10 @@ User=wth
 Group=wth
 WorkingDirectory=@INSTALL_DIR@
 Environment=PYTHONUNBUFFERED=1
+# lgpio (gpiozero's Pi 5 backend) creates its notify pipe in its working directory, and
+# the service user can't write to the install folder; give it a private runtime dir.
+RuntimeDirectory=wth-display
+Environment=LG_WD=/run/wth-display
 ExecStart=@INSTALL_DIR@/.venv/bin/wth-edge display
 Restart=always
 RestartSec=5
