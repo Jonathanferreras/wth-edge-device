@@ -80,6 +80,17 @@ class DisplaySection:
     refresh_s: float = 1.0
     # The screen shows "offline" when state.json is older than this.
     stale_after_s: float = 15.0
+    # Pixel art played once when the screen service starts: a bundled name
+    # (`wth-edge art list`), a .gif path, or "" for none.
+    boot_animation: str = "boot"
+    # What the screen shows: "art" (the live pixel art scene, telemetry drawn into it),
+    # "status" (the text status screen) or "alternate" (art for art_s, then status for status_s).
+    mode: str = "alternate"
+    art_fps: float = 8.0
+    art_s: float = 20.0
+    status_s: float = 6.0
+    # Local hours when the art switches to the sleeping scene: (start, end).
+    night_hours: tuple[int, int] = (22, 6)
 
 
 @dataclass

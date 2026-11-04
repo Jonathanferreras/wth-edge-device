@@ -23,6 +23,7 @@ dc_pin = 25               # header pin 22
 rst_pin = 27              # header pin 13
 spi_hz = 40_000_000       # drop to 10_000_000 if the screen shows noise
 madctl = 0x08
+mode = "alternate"        # "art" (live pixel art with telemetry), "status" (text), or both in turn
 
 [web]
 enabled = true

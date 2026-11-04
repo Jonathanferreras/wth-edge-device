@@ -1,4 +1,4 @@
-"""Command line: ``wth-edge run | display | doctor | config | update | import-dataset | eval``."""
+"""Command line: ``wth-edge run | display | play | art | doctor | config | update | import-dataset | eval``."""
 
 from __future__ import annotations
 
@@ -42,6 +42,16 @@ def main(argv: list[str] | None = None) -> int:
     run_p.add_argument("--source", help="replay this .mp4 instead of the camera (loops)")
     run_p.add_argument("--port", type=int, help="web panel port")
     sub.add_parser("display", help="run the round status screen")
+    play_p = sub.add_parser("play", help="play a pixel art animation on the screen (stop wth-display first)")
+    play_p.add_argument("animation", help="bundled name (see `wth-edge art list`), a .gif/.png, or a folder of PNG frames")
+    play_p.add_argument("--loops", type=int, help="times to play it; 0 = forever (default: the GIF's own setting)")
+    play_p.add_argument("--seconds", type=float, help="stop after this long")
+    play_p.add_argument("--speed", type=float, default=1.0, help="playback speed multiplier")
+    art_p = sub.add_parser("art", help="list or rebuild the bundled pixel art")
+    art_p.add_argument("action", choices=["list", "build", "live-preview"],
+                       help="live-preview renders the live telemetry scene for sample states")
+    art_p.add_argument("names", nargs="*", help="scenes to build (default: all)")
+    art_p.add_argument("--out", help="write GIFs here instead of the package folder")
     sub.add_parser("doctor", help="check this Pi against its profile")
     sub.add_parser("config", help="print the merged config as JSON")
     sub.add_parser("update", help="git pull and re-run install.sh (needs sudo)")
@@ -70,7 +80,43 @@ def main(argv: list[str] | None = None) -> int:
                        user=owner if owner != 0 else None)
         return subprocess.call([str(repo / "install.sh")])
 
+    if args.cmd == "art":
+        from .display.art import scenes
+        from .display.art.player import available, load
+
+        if args.action == "live-preview":
+            from .display.art.live import build_demos
+
+            for path in build_demos(Path(args.out or "live-preview").expanduser()):
+                print(path)
+            return 0
+        if args.action == "build":
+            out = Path(args.out).expanduser() if args.out else scenes.GIF_DIR
+            for path in scenes.build(out, args.names or None):
+                print(path)
+            return 0
+        for name in available():
+            a = load(name)
+            print(f"{name:8} {len(a.frames):3} frames  {a.length_s:4.1f} s  {'loops' if a.loop else 'once'}")
+        return 0
+
     cfg = _load(args)
+    if args.cmd == "play":
+        from .display.art.player import load, play
+        from .display.service import make_display
+
+        anim = load(args.animation)
+        dev = make_display(cfg.display)
+        if dev is None:
+            print("display.driver is 'none' in this config", file=sys.stderr)
+            return 1
+        try:
+            play(dev, anim, loops=args.loops, seconds=args.seconds, speed=args.speed)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            dev.close()
+        return 0
     if args.cmd == "run":
         from .app import run
 

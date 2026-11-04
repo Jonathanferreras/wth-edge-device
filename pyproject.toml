@@ -32,6 +32,7 @@ include = ["wth_edge*"]
 
 [tool.setuptools.package-data]
 "wth_edge.web" = ["static/*"]
+"wth_edge.display.art" = ["gifs/*.gif"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
