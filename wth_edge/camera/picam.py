@@ -28,13 +28,15 @@ def camera_info() -> list[dict]:
 
 class PiCamera(Camera):
     name = "picamera2"
+    # libcamera does not always recover inside one process after a failed open
+    # ("Camera __init__ sequence did not complete"), so let systemd restart us.
+    max_consecutive_failures = 3
 
     def __init__(self, cfg, bus) -> None:
         super().__init__(cfg, bus)
         self._picam = None
 
     def _open(self):
-        from libcamera import Transform, controls  # type: ignore[import-not-found]
         from picamera2 import Picamera2  # type: ignore[import-not-found]
 
         cams = Picamera2.global_camera_info()
@@ -42,7 +44,21 @@ class PiCamera(Camera):
             raise RuntimeError("no camera detected (check the ribbon cable and `rpicam-hello --list-cameras`)")
         self.sensor = cams[0].get("Model")
 
-        picam = Picamera2(0)
+        try:
+            picam = Picamera2(0)
+        except RuntimeError as exc:
+            # Picamera2 logs the underlying libcamera error just before this; the usual
+            # cause is another process holding the camera (rpicam-vid, mediamtx, ...).
+            raise RuntimeError(f"{exc} Is another process using the camera? (see journalctl -u wth-edge)") from exc
+        try:
+            return self._configure(picam)
+        except Exception:
+            picam.close()
+            raise
+
+    def _configure(self, picam):
+        from libcamera import Transform, controls  # type: ignore[import-not-found]
+
         cfg = self.cfg
         video_config = picam.create_video_configuration(
             main={"size": tuple(cfg.main_size), "format": "YUV420"},

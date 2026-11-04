@@ -88,6 +88,9 @@ class Camera:
     """Base class: a driver runs ``_capture_loop`` in a thread and publishes frames."""
 
     name = "base"
+    # Give up after this many failures in a row without a single frame (None = never).
+    # The process then exits and systemd restarts it with a fresh camera stack.
+    max_consecutive_failures: int | None = None
 
     def __init__(self, cfg, bus: FrameBus) -> None:
         self.cfg = cfg
@@ -96,6 +99,7 @@ class Camera:
         self._thread: threading.Thread | None = None
         self._error: str | None = None
         self.sensor: str | None = None
+        self.fatal = False
 
     def start(self) -> None:
         self._stop.clear()
@@ -109,12 +113,21 @@ class Camera:
 
     def _run(self) -> None:
         backoff = 1.0
+        failures = 0
         while not self._stop.is_set():
+            seq_before = self.bus.latest().seq if self.bus.latest() else 0
             try:
                 self._capture_loop()
-                backoff = 1.0
+                backoff, failures = 1.0, 0
             except Exception as exc:  # keep retrying: a camera can come back after a reseat
                 self._error = f"{type(exc).__name__}: {exc}"
+                got_frames = (self.bus.latest().seq if self.bus.latest() else 0) > seq_before
+                failures = 0 if got_frames else failures + 1
+                limit = self.max_consecutive_failures
+                if limit is not None and failures >= limit:
+                    log.error("camera %s failed %d times in a row (%s); giving up", self.name, failures, self._error)
+                    self.fatal = True
+                    return
                 log.error("camera %s failed: %s; retrying in %.0fs", self.name, self._error, backoff)
                 self._stop.wait(backoff)
                 backoff = min(backoff * 2, 30.0)

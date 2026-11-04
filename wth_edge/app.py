@@ -35,6 +35,8 @@ class Device:
         self._lock = threading.Lock()
         self._state = new_state(config.device.id, __version__)
         self._threads: list[threading.Thread] = []
+        self.server = None  # uvicorn server, when the web panel runs
+        self.exit_code = 0
 
     # ---- state shared with the web panel and the display service ----
     def get_state(self) -> dict[str, Any]:
@@ -57,6 +59,13 @@ class Device:
     def _state_loop(self) -> None:
         path = self.config.paths.state_file
         while not self.stop_event.is_set():
+            if self.camera.fatal:
+                log.error("camera unrecoverable; exiting so systemd restarts wth-edge")
+                self.exit_code = 1
+                self.stop_event.set()
+                if self.server is not None:
+                    self.server.should_exit = True
+                break
             health = self.camera.health()
             with self._lock:
                 self._state["camera"] = health.as_dict()
@@ -126,7 +135,7 @@ def run(config) -> int:
             from .web.app import create_app
 
             app = create_app(config, device.bus, device.get_state)
-            server = uvicorn.Server(
+            server = device.server = uvicorn.Server(
                 uvicorn.Config(app, host=config.web.host, port=config.web.port, log_level="warning",
                                timeout_graceful_shutdown=2, access_log=False)
             )
@@ -138,4 +147,4 @@ def run(config) -> int:
             device.stop_event.wait()
     finally:
         device.stop()
-    return 0
+    return device.exit_code
