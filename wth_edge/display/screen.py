@@ -15,6 +15,8 @@ from typing import Any
 
 from PIL import Image, ImageDraw, ImageFont
 
+from ..units import format_temp
+
 W = H = 240
 BG = (10, 20, 40)
 COPPER = (200, 120, 50)
@@ -60,7 +62,13 @@ def overall(state: dict[str, Any] | None, age_s: float | None, stale_after_s: fl
     return state.get("status", "starting")
 
 
-def render(state: dict[str, Any] | None, age_s: float | None, stale_after_s: float = 15.0, now: float | None = None) -> Image.Image:
+def render(
+    state: dict[str, Any] | None,
+    age_s: float | None,
+    stale_after_s: float = 15.0,
+    now: float | None = None,
+    temp_unit: str = "F",
+) -> Image.Image:
     now = time.time() if now is None else now
     status = overall(state, age_s, stale_after_s)
     ring = {"ok": GREEN, "degraded": AMBER, "offline": RED}.get(status, COPPER)
@@ -95,8 +103,8 @@ def render(state: dict[str, Any] | None, age_s: float | None, stale_after_s: flo
 
     tel = state.get("telemetry", {}) or {}
     parts = []
-    if tel.get("cpu_temp_c") is not None:
-        parts.append(f"{tel['cpu_temp_c']:.0f}°C")
+    if (temp := format_temp(tel.get("cpu_temp_c"), temp_unit)) is not None:
+        parts.append(temp)
     if tel.get("input_voltage_v") is not None:
         parts.append(f"{tel['input_voltage_v']:.2f} V")
     thr = tel.get("throttled") or {}

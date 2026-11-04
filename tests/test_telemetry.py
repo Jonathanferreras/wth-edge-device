@@ -24,3 +24,11 @@ def test_snapshot_runs_off_a_pi():
     snap = telemetry.snapshot()
     for key in ("cpu_percent", "ram_percent", "disk_percent", "cpu_temp_c", "input_voltage_v", "throttled"):
         assert key in snap
+
+
+def test_temperature_display_units():
+    from wth_edge.units import format_temp
+
+    assert format_temp(47.4, "F") == "117°F"
+    assert format_temp(47.4, "C", 1) == "47.4°C"
+    assert format_temp(None) is None

@@ -47,7 +47,7 @@ def run_display(config, stop: threading.Event | None = None) -> int:
     try:
         while not stop.is_set():
             state = read_state(config.paths.state_file)
-            img = render(state, state_age_s(state), dcfg.stale_after_s)
+            img = render(state, state_age_s(state), dcfg.stale_after_s, temp_unit=config.ui.temperature_unit)
             raw = img.tobytes()
             if raw != last:  # SPI writes cost ~25 ms; skip identical frames
                 dev.show(img)

@@ -73,6 +73,7 @@ def create_app(config, bus: FrameBus, get_state: Callable[[], dict[str, Any]]) -
     def api_state() -> JSONResponse:
         st = dict(get_state())
         st["auth_enabled"] = bool(password)
+        st["temperature_unit"] = config.ui.temperature_unit.upper()
         st["rois"] = {k: vars(v) for k, v in rois.items()}
         return JSONResponse(st)
 

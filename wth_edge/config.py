@@ -101,6 +101,13 @@ class PublisherSection:
 
 
 @dataclass
+class UiSection:
+    # How the screen and web panel show temperatures: "F" or "C".
+    # Telemetry data itself always stays in Celsius (cpu_temp_c).
+    temperature_unit: str = "F"
+
+
+@dataclass
 class PathsSection:
     state_file: str = "/run/wth/state.json"
     data_dir: str = "/var/lib/wth"
@@ -141,6 +148,7 @@ class Config:
     web: WebSection = field(default_factory=WebSection)
     publisher: PublisherSection = field(default_factory=PublisherSection)
     paths: PathsSection = field(default_factory=PathsSection)
+    ui: UiSection = field(default_factory=UiSection)
     site: SiteSection = field(default_factory=SiteSection)
     # Files that were merged, in order, for `wth-edge doctor` and logs.
     sources: list[str] = field(default_factory=list)

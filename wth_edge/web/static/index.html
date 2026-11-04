@@ -72,7 +72,7 @@ const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 const fmt = {
   pct: (v) => v == null ? "–" : `${v.toFixed(0)}%`,
-  temp: (v) => v == null ? "–" : `${v.toFixed(1)} °C`,
+  temp: (c, unit) => c == null ? "–" : unit === "C" ? `${c.toFixed(1)} °C` : `${(c * 9 / 5 + 32).toFixed(1)} °F`,
   volt: (v) => v == null ? "–" : `${v.toFixed(2)} V`,
   up: (s) => { if (s == null) return "–"; const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return d ? `${d}d ${h}h` : `${h}h ${m}m`; },
 };
@@ -96,7 +96,7 @@ async function tick() {
     const t = s.telemetry || {};
     const thr = t.throttled || {};
     const rows = [
-      ["CPU temp", fmt.temp(t.cpu_temp_c), t.cpu_temp_c > 75 ? "warn" : ""],
+      ["CPU temp", fmt.temp(t.cpu_temp_c, s.temperature_unit), t.cpu_temp_c > 75 ? "warn" : ""],
       ["CPU", fmt.pct(t.cpu_percent)],
       ["Load (1 min)", t.load_1m ?? "–"],
       ["RAM", fmt.pct(t.ram_percent)],

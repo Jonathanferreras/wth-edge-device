@@ -1,24 +1,24 @@
 # Calibration for one window. ROIs are fractions of the frame (x, y from the top-left,
 # w, h as widths), so they keep working if the resolution changes.
 #
-# These two were converted from the Pi 3 code's pixel ROIs at 1280x720:
-#   boat:   700x100 box, offset +300,+200 from centre  (wth-edge-device boat detector)
-#   bridge: 165x135 box, offset -105,+105 from centre  (wth-inference-training bridge.py)
-# They match the old mount. Re-check them against the live view after mounting the v2 case.
+# Measured on the live view of jf-pi-5 (v2 window mount), Nov 4 2026:
+#   bridge: the bascule span from the left abutment to the right pier, deck to pier feet
+#   boat:   the channel under and just right of the bridge, where boats pass through
+# Fine-tune per Pi by overriding [site.rois.*] in /etc/wth/device.toml.
 
 [site]
 name = "default"
 left_is = "WEST"
 right_is = "EAST"
 
-[site.rois.boat]
-x = 0.461
-y = 0.708
-w = 0.539
-h = 0.139
-
 [site.rois.bridge]
-x = 0.353
-y = 0.551
-w = 0.129
-h = 0.188
+x = 0.13
+y = 0.57
+w = 0.21
+h = 0.15
+
+[site.rois.boat]
+x = 0.24
+y = 0.66
+w = 0.22
+h = 0.15
