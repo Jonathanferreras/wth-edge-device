@@ -24,6 +24,10 @@ class Publisher:
     def publish_telemetry(self, device_id: str, telemetry: dict[str, Any]) -> None:
         raise NotImplementedError
 
+    def publish_event(self, device_id: str, event: dict[str, Any]) -> None:
+        """A detector event: bridge position change, boat started / direction / ended."""
+        raise NotImplementedError
+
     def close(self) -> None:
         pass
 
@@ -38,6 +42,11 @@ class ConsolePublisher(Publisher):
 
     def publish_telemetry(self, device_id: str, telemetry: dict[str, Any]) -> None:
         log.info("telemetry %s", json.dumps({"device_id": device_id, **telemetry}, separators=(",", ":")))
+        self.last_publish_at = time.time()
+        self.ok = True
+
+    def publish_event(self, device_id: str, event: dict[str, Any]) -> None:
+        log.info("event %s", json.dumps({"device_id": device_id, **event}, separators=(",", ":"), default=str))
         self.last_publish_at = time.time()
         self.ok = True
 

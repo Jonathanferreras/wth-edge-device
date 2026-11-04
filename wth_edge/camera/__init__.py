@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .base import Camera, CameraHealth, Frame, FrameBus
+from .base import Camera, CameraHealth, Frame, FrameBus, HiRes
 
 
 def make_camera(cfg, bus: FrameBus) -> Camera:
@@ -20,4 +20,4 @@ def make_camera(cfg, bus: FrameBus) -> Camera:
     raise ValueError(f"unknown camera.driver {cfg.driver!r} (picamera2, fake, file)")
 
 
-__all__ = ["Camera", "CameraHealth", "Frame", "FrameBus", "make_camera"]
+__all__ = ["Camera", "CameraHealth", "Frame", "FrameBus", "HiRes", "make_camera"]

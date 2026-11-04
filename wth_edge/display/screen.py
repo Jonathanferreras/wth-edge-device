@@ -99,8 +99,15 @@ def render(
     position = str(bridge.get("position", "unknown")).upper()
     _centered(d, 104, position, 32, WHITE, bold=True, max_w=190)
     conf = bridge.get("confidence")
-    sub = "no detector yet" if position == "UNKNOWN" else f"bridge · {round((conf or 0) * 100)}%"
-    _centered(d, 134, sub, 12, GREY)
+    boat = state.get("boat") or {}
+    if boat.get("present"):
+        code = (boat.get("direction") or "").upper()
+        sub, colour = (f"BOAT {code[0]}→{code[-1]}" if len(code) == 3 else "BOAT"), AMBER
+    elif position == "UNKNOWN":
+        sub, colour = ("no detector" if not state.get("detector") else "can't see bridge"), GREY
+    else:
+        sub, colour = f"bridge · {round((conf or 0) * 100)}%", GREY
+    _centered(d, 134, sub, 13 if boat.get("present") else 12, colour, bold=bool(boat.get("present")))
 
     cam = state.get("camera", {}) or {}
     if cam.get("ok"):

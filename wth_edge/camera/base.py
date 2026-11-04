@@ -18,12 +18,57 @@ import numpy as np
 log = logging.getLogger(__name__)
 
 
+class HiRes:
+    """A full-resolution frame for detectors, converted only when asked.
+
+    ``kind`` is "yuv420" (Picamera2's main stream: Y plane, then quarter-size U and V)
+    or "rgb". Greyscale from YUV is free (the Y plane); RGB costs a conversion, so the
+    boat model asks for it only when it runs.
+    """
+
+    def __init__(self, data: np.ndarray, kind: str, size: tuple[int, int]) -> None:
+        self.data, self.kind, self.size = data, kind, size
+        self._grey: np.ndarray | None = None
+        self._rgb: np.ndarray | None = None
+
+    @property
+    def shape(self) -> tuple[int, int]:
+        return self.size[1], self.size[0]
+
+    def grey(self) -> np.ndarray:
+        if self._grey is None:
+            w, h = self.size
+            if self.kind == "yuv420":
+                self._grey = self.data[:h, :w]
+            else:
+                import cv2
+
+                self._grey = cv2.cvtColor(self.data, cv2.COLOR_RGB2GRAY)
+        return self._grey
+
+    def rgb(self) -> np.ndarray:
+        if self._rgb is None:
+            if self.kind == "rgb":
+                self._rgb = self.data
+            else:
+                import cv2
+
+                w, h = self.size
+                if self.data.shape[1] == w:
+                    self._rgb = cv2.cvtColor(self.data, cv2.COLOR_YUV2RGB_I420)
+                else:  # padded rows: fall back to grey
+                    self._rgb = cv2.cvtColor(self.grey(), cv2.COLOR_GRAY2RGB)
+        return self._rgb
+
+
 @dataclass
 class Frame:
     seq: int
     timestamp: float
     # HxWx3 uint8 RGB, or HxW uint8 greyscale when the stream only offers YUV.
     image: np.ndarray
+    # Optional full-resolution frame for detectors.
+    hires: HiRes | None = None
 
 
 @dataclass
@@ -53,11 +98,11 @@ class FrameBus:
     _seq: int = 0
     _times: deque = field(default_factory=lambda: deque(maxlen=60))
 
-    def publish(self, image: np.ndarray, timestamp: float | None = None) -> Frame:
+    def publish(self, image: np.ndarray, timestamp: float | None = None, hires: HiRes | None = None) -> Frame:
         with self._cond:
             self._seq += 1
             ts = timestamp if timestamp is not None else time.time()
-            self._latest = Frame(self._seq, ts, image)
+            self._latest = Frame(self._seq, ts, image, hires)
             self._times.append(ts)
             self._cond.notify_all()
             return self._latest

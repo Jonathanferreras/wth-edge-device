@@ -1,4 +1,4 @@
-"""Command line: ``wth-edge run | display | doctor | config | update | import-dataset``."""
+"""Command line: ``wth-edge run | display | doctor | config | update | import-dataset | eval``."""
 
 from __future__ import annotations
 
@@ -50,6 +50,13 @@ def main(argv: list[str] | None = None) -> int:
     imp.add_argument("--data-dir", help="clip store root (default: paths.data_dir from config)")
     imp.add_argument("--link", action="store_true", help="symlink the videos instead of copying")
     imp.add_argument("--dry-run", action="store_true", help="list what would be imported")
+    ev = sub.add_parser("eval", help="run the detectors over recorded clips and score them")
+    ev.add_argument("path", help="a clip store folder (the one holding clips/), e.g. ~/wth-clips")
+    ev.add_argument("--site", help="ROIs for clips without their own (imported clips: legacy-pi3)", default="legacy-pi3")
+    ev.add_argument("--label", help="only clips with this label, e.g. boat")
+    ev.add_argument("--limit", type=int, help="only the first N clips")
+    ev.add_argument("--full-res", action="store_true", help="don't shrink frames to the live detector size")
+    ev.add_argument("--out", help="write per-clip results to a .json or .csv file")
     args = parser.parse_args(argv)
     _setup_logging(args.verbose)
 
@@ -90,6 +97,18 @@ def main(argv: list[str] | None = None) -> int:
         for d in done:
             print(f"{d['id']}  {d.get('source_path') or d['import']['source_path']}")
         print(f"{'would import' if args.dry_run else 'imported'} {len(done)} clips into {store.root}")
+        return 0
+    if args.cmd == "eval":
+        from .evaluate import run_eval
+
+        summary = run_eval(cfg, args.path, site=args.site, limit=args.limit, label=args.label,
+                           full_res=args.full_res, out=args.out)
+        s = summary
+        print()
+        print(f"boat clips:   {s['boat_found']}/{s['boat_clips']} found, direction right on "
+              f"{s['direction_ok']}/{s['direction_checked']}")
+        print(f"other clips:  {s['false_alarms']}/{s['other_clips']} false alarms")
+        print(f"speed:        {s['ms_per_frame']} ms per detector frame on this machine")
         return 0
     if args.cmd == "config":
         print(json.dumps(asdict(cfg), indent=2, default=str))

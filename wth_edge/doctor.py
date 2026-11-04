@@ -67,6 +67,24 @@ def run_doctor(config) -> int:
             except ImportError:
                 results.append(_line(FAIL, f"python: {mod}", f"missing; apt install python3-{mod}"))
 
+    if config.detectors.enabled and config.camera.driver != "fake":
+        try:
+            import cv2
+
+            results.append(_line(OK, "opencv", cv2.__version__))
+            if config.boat_detector.enabled and config.boat_detector.confirm == "yolo":
+                from .config import REPO_ROOT
+
+                mp = Path(config.boat_detector.model_path)
+                mp = mp if mp.is_absolute() else REPO_ROOT / mp
+                try:
+                    cv2.dnn.readNetFromONNX(str(mp))
+                    results.append(_line(OK, "boat model", str(mp)))
+                except Exception as exc:
+                    results.append(_line(WARN, "boat model", f"{mp}: {exc} (boats confirmed by motion only)"))
+        except ImportError:
+            results.append(_line(WARN, "opencv", "missing: detectors off; apt install python3-opencv"))
+
     if os.geteuid() == 0:
         try:
             groups = {g.gr_name for g in grp.getgrall() if "wth" in g.gr_mem}

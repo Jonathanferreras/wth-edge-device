@@ -63,6 +63,48 @@ Profiles today:
 - `pi3-cam2-headless`: the original Pi 3 with no screen (greyscale preview).
 - `dev`: a laptop, with a synthetic camera and the screen written to a PNG.
 
+## Detectors and auto-recording
+
+`wth-edge run` watches the two boxes in the live view, about 5 times a second:
+
+- **Bridge**: the longest straight edge in the bridge box (Canny + Hough, ported from the
+  old `bridge.py`) gives the leaf angle, 0° flat to 90° upright. A 3 s median and a 2 s
+  hold turn it into `closed` / `opening` / `open` / `closing` / `unknown`. It reads the
+  full-resolution greyscale frame, because the bridge edge disappears at preview size.
+- **Boats**: background subtraction in the boat box wakes YOLOv8s (`models/yolov8s.onnx`,
+  COCO class `boat`, run through OpenCV, no PyTorch). The model also runs every 2 s when
+  nothing moves, because a slow tug blends into the background. Two hits start a
+  crossing; the direction locks once the boat has moved 3% of the frame width; the
+  crossing ends 20 s after the last hit.
+
+When the bridge leaves `closed` or a boat crossing starts, a clip starts by itself
+(trigger `bridge` or `boat`, with the usual 15 s pre-roll) and stops 20 s after both are
+quiet. Pressing **Stop** on an automatic clip sticks until the scene goes quiet. While any
+clip records, the detectors write a log into its `clip.json` (`detections`: the bridge
+angle and position, the boat box and direction, once a second, plus each event), to use as
+draft labels. Events also go to the publisher (the console for now, Firestore next).
+
+Settings: `[detectors]`, `[bridge_detector]`, `[boat_detector]`, `[autorecord]` (see
+`wth_edge/config.py` for every knob). The panel shows each detector's speed per frame.
+
+### Checking the detectors against recorded clips
+
+```sh
+wth-edge --config dev/device.toml eval ~/wth-clips --label boat --out ~/wth-eval.json
+```
+
+`eval` replays every clip in a clip store through the same detector code at the live
+rate and prints, per clip, the crossings and directions found against the folder labels,
+the bridge positions seen and the angle range. Clips without their own ROIs (the imported
+Pi 3 set) use `sites/legacy-pi3.toml`; `--site` picks another.
+
+What it showed on 12 of the old clips: the tug on 2026-04-11 was found with the right
+direction and no false alarms on the two traffic clips, but most old "boat" segments
+show no boat at all (a crossing spans several segments), so per-clip recall is not a
+useful number for that set. The bridge angle is reliable in clear light and unreliable in
+fog, at night and where the old camera was zoomed differently. Clips recorded by v2 carry
+their own ROIs in `clip.json`, so `eval` on those is the real benchmark.
+
 ## Recording clips
 
 The web panel has a **Recording** card: pick a label, add a note, press Start. Each clip
@@ -120,7 +162,9 @@ works on a laptop too: it encodes the 640x360 preview frames with PyAV.
 
 Done: install script, profiles, camera service with health checks, status screen,
 telemetry, a console publisher, the web panel (live view, telemetry), manual recording with
-pre-roll, the clip browser, drag-to-adjust ROIs, dataset import and replay.
+pre-roll, the clip browser, drag-to-adjust ROIs, dataset import and replay, bridge and boat
+detectors, auto-recording with detection logs, and `eval`.
 
-Next, per the plan: detectors (bridge angle, boat YOLO) that also start recordings on their
-own, the Firestore publisher, and H.264 streaming through MediaMTX.
+Next, per the plan: the Firestore publisher, then H.264 streaming through MediaMTX. The
+bridge detector is the weak spot; once the Pi has collected labelled clips, a small
+classifier on the bridge box should replace the Hough angle.

@@ -129,7 +129,8 @@ if [[ $SKIP_APT -eq 0 ]]; then
   if [[ "$NEEDS_CAMERA" == "true" ]]; then
     # Full rpicam-apps (not -lite) brings the libav H.264 encoder.
     # python3-av: PyavOutput writes the .mp4 clips. ffmpeg: fallback remux on older picamera2.
-    pkgs+=(python3-picamera2 rpicam-apps python3-av ffmpeg)
+    # python3-opencv: the detectors (Hough lines, background subtraction, YOLO via cv2.dnn).
+    pkgs+=(python3-picamera2 rpicam-apps python3-av ffmpeg python3-opencv)
   fi
   if [[ "$DISPLAY_DRIVER" == "gc9a01" ]]; then
     pkgs+=(python3-spidev python3-gpiozero python3-lgpio)

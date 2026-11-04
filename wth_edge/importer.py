@@ -30,7 +30,7 @@ from .clips import SCHEMA, ClipStore, utc_iso
 log = logging.getLogger(__name__)
 
 DATE_RE = re.compile(r"(\d{2})-(\d{2})-(\d{4})")
-LABELS = {"boat_crossings": "boat", "boats": "boat", "traffic": "traffic", "bridge": "bridge"}
+LABELS = {"boat_crossings": "boat", "boats": "boat", "traffic": "traffic", "traffic_release": "traffic", "bridge": "bridge"}
 
 
 def _probe(path: Path) -> tuple[float | None, tuple[int, int] | None, bytes | None]:
@@ -122,7 +122,7 @@ def import_dataset(root: str | Path, store: ClipStore, link: bool = False, dry_r
             "schema": SCHEMA,
             "id": d["id"],
             "device_id": "legacy-pi3",
-            "site": "default",
+            "site": "legacy-pi3",
             "trigger": "import",
             "label": d["label"],
             "note": "",

@@ -15,7 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
-from .base import Camera
+from .base import Camera, HiRes
 
 log = logging.getLogger(__name__)
 
@@ -117,9 +117,14 @@ class PiCamera(Camera):
         self._picam = self._open()
         self._error = None
         try:
+            mw, mh = self.cfg.main_size
             while not self._stop.is_set():
-                arr = self._picam.capture_array("lores")
-                self.bus.publish(self._to_image(arr))
+                if self.cfg.detector_hires:
+                    (lores, main), _ = self._picam.capture_arrays(["lores", "main"])
+                    # The buffer is reused by the camera, so copy (about 1.4 MB at 720p).
+                    self.bus.publish(self._to_image(lores), hires=HiRes(main.copy(), "yuv420", (mw, mh)))
+                else:
+                    self.bus.publish(self._to_image(self._picam.capture_array("lores")))
         finally:
             try:
                 if self.clip_writer is not None:
