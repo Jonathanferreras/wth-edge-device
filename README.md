@@ -33,7 +33,7 @@ and data too).
 | Unit | Command | Does |
 | --- | --- | --- |
 | `wth-edge.service` | `wth-edge run` | Owns the camera (Picamera2), records clips, collects telemetry, writes `/run/wth/state.json`, serves the web panel on port 8080, hands data to the publisher. |
-| `wth-display.service` | `wth-edge display` | Redraws the round GC9A01 screen from `state.json` every second. Separate on purpose: it shows **OFFLINE** when the main app is down. |
+| `wth-display.service` | `wth-edge display` | Plays the boot animation, then draws the round GC9A01 screen from `state.json`: the live pixel art scene, the text status, or both in turn (`display.mode`). Separate on purpose: it shows **OFFLINE** when the main app is down. |
 
 Useful commands on the Pi:
 
@@ -210,6 +210,60 @@ wth-edge --config dev/device.toml run --source ~/wth-clips/clips/2026-04-03/<id>
 
 Or set `driver = "file"` and `file_path` under `[camera]` in `dev/device.toml`. Recording
 works on a laptop too: it encodes the 640x360 preview frames with PyAV.
+
+## Pixel art on the round screen
+
+Retro pixel art lives in `wth_edge/display/art/`: a small drawing kit (`kit.py`: a 26 colour
+palette with neons, ASCII sprites, a 3x5 pixel font, Bayer dithering, the round mask), the
+scenes drawn with it (`scenes.py`: a mallard on a rainy neon cyberpunk canal, with CRT
+scanlines and VHS glitches), and a player (`player.py`). Scenes are drawn on an 80x80 canvas and
+scaled 3x to the 240x240 panel. The built GIFs in `wth_edge/display/art/gifs/` are both the
+previews and what the Pi plays.
+
+| boot | idle | alert | sleep |
+| --- | --- | --- | --- |
+| ![boot](wth_edge/display/art/gifs/boot.gif) | ![idle](wth_edge/display/art/gifs/idle.gif) | ![alert](wth_edge/display/art/gifs/alert.gif) | ![sleep](wth_edge/display/art/gifs/sleep.gif) |
+
+```sh
+wth-edge art list                       # bundled animations
+wth-edge art build [idle ...]           # redraw the GIFs after editing scenes.py
+sudo systemctl stop wth-display         # the player and the status screen share the SPI bus
+wth-edge play idle --seconds 30         # any bundled name, a .gif, or a folder of PNG frames
+sudo systemctl start wth-display
+```
+
+### Telemetry in the art
+
+With `display.mode = "art"` (or `"alternate"`, the default: 20 s of art, then 6 s of the text
+status screen, set by `art_s` and `status_s`) the screen draws the canal scene live at
+`art_fps` (8) from `state.json`, with the telemetry drawn into it (`art/live.py`):
+
+| Shows | Means |
+| --- | --- |
+| ring colour | overall status: cyan ok, amber degraded, red offline, violet starting |
+| bridge up or down, flashing lamps | `bridge.position`, eased while opening or closing |
+| neon boat crossing | a boat is detected, in its direction (`w2e` sails left to right) |
+| mallard flapping under a "!" | the bridge isn't closed or a boat is passing |
+| visor glowing, or dark with static | camera ok, or camera down |
+| sun yellow, orange, pulsing red | CPU temperature from 50 °C to 80 °C and up |
+| skyline browning out and glitching | under-voltage right now |
+| red dot by the "WTH" sign | recording |
+| sleeping mallard, dim city | `night_hours` (22 to 6), unless something is happening |
+| ticker on the bottom strip | one reading at a time: temperature, volts, fps, warnings, boat, bridge, REC |
+
+| ok | boat, bridge open, recording | hot and low power |
+| --- | --- | --- |
+| ![ok](docs/screen/live-ok.gif) | ![boat](docs/screen/live-boat.gif) | ![hot](docs/screen/live-hot-lowpower.gif) |
+| **camera down** | **night** | **offline** |
+| ![camera down](docs/screen/live-camera-down.gif) | ![night](docs/screen/live-night.gif) | ![offline](docs/screen/live-offline.gif) |
+
+`wth-edge art live-preview --out <dir>` renders these previews from the sample states in
+`art/live.py`.
+
+`wth-display.service` plays `display.boot_animation` (default `boot`, `""` for none) once
+when it starts, then shows the status screen. Any GIF works with `wth-edge play`, including
+ones drawn in Aseprite at 80x80 or 120x120: smaller frames are scaled up with nearest
+neighbour. On a laptop, `play` writes frames to `dev/display.png`.
 
 ## Status
 
