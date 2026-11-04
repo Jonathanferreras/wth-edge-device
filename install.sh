@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Install or update the Watch The Hutch edge device on a Raspberry Pi.
 #
+#   sudo apt update && sudo apt install -y git
 #   sudo git clone https://github.com/Jonathanferreras/wth-edge-device /opt/wth-edge
 #   sudo /opt/wth-edge/install.sh --profile pi5-cam3-gc9a01 --device-id hutch-01
 #

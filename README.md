@@ -15,6 +15,7 @@ services. The Pi 3 version lives in [`legacy/`](legacy/) until v2 replaces it.
 2. Clone and install:
 
    ```sh
+   sudo apt update && sudo apt install -y git   # Pi OS Lite has no git
    sudo git clone https://github.com/Jonathanferreras/wth-edge-device /opt/wth-edge
    sudo /opt/wth-edge/install.sh --profile pi5-cam3-gc9a01 --device-id hutch-01
    ```
