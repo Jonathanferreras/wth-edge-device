@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WTH device</title>
+<style>
+  :root {
+    --bg: #0a1428; --panel: #13203a; --line: #22324f; --ink: #eef0f4; --quiet: #96a0af;
+    --ok: #21d19f; --warn: #facc15; --bad: #ef4444; --copper: #c87832;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  header h1 { margin: 0; font-size: 17px; color: var(--copper); letter-spacing: .04em; }
+  header .id { color: var(--quiet); font-size: 13px; }
+  .pill { margin-left: auto; padding: 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; background: var(--line); }
+  .pill.ok { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok); }
+  .pill.degraded, .pill.starting { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
+  .pill.offline { background: color-mix(in srgb, var(--bad) 20%, transparent); color: var(--bad); }
+  main { display: grid; grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); gap: 16px; padding: 16px; max-width: 1280px; margin: 0 auto; }
+  @media (max-width: 820px) { main { grid-template-columns: 1fr; } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
+  h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--quiet); }
+  .view img { width: 100%; display: block; border-radius: 6px; background: #000; aspect-ratio: 16 / 9; object-fit: contain; }
+  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; color: var(--quiet); font-size: 13px; }
+  button { font: inherit; color: var(--ink); background: var(--line); border: 1px solid #33466b; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; }
+  dt { color: var(--quiet); }
+  dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+  .big { font-size: 26px; font-weight: 700; text-transform: uppercase; }
+  .ok { color: var(--ok); } .bad { color: var(--bad); } .warn { color: var(--warn); }
+  .stack { display: grid; gap: 16px; align-content: start; }
+  .note { color: var(--quiet); font-size: 12px; margin-top: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>WATCH THE HUTCH</h1>
+  <span class="id" id="device">…</span>
+  <span class="pill" id="status">…</span>
+</header>
+<main>
+  <section class="view">
+    <h2>Live view</h2>
+    <img id="stream" src="stream.mjpg?overlay=1" alt="Live camera view">
+    <div class="row">
+      <label><input type="checkbox" id="overlay" checked> Show ROIs</label>
+      <span id="camline"></span>
+    </div>
+    <div class="row">
+      <button disabled title="Arrives with the recorder">Start recording</button>
+      <span>Recording controls and clips arrive in the next step.</span>
+    </div>
+  </section>
+  <div class="stack">
+    <section>
+      <h2>Bridge</h2>
+      <div class="big" id="bridge">unknown</div>
+      <div class="note" id="bridgenote">No detector running yet.</div>
+    </section>
+    <section>
+      <h2>Telemetry</h2>
+      <dl id="tel"></dl>
+      <div class="note" id="auth"></div>
+    </section>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const fmt = {
+  pct: (v) => v == null ? "–" : `${v.toFixed(0)}%`,
+  temp: (v) => v == null ? "–" : `${v.toFixed(1)} °C`,
+  volt: (v) => v == null ? "–" : `${v.toFixed(2)} V`,
+  up: (s) => { if (s == null) return "–"; const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return d ? `${d}d ${h}h` : `${h}h ${m}m`; },
+};
+$("overlay").addEventListener("change", (e) => { $("stream").src = `stream.mjpg?overlay=${e.target.checked ? 1 : 0}&t=${Date.now()}`; });
+
+async function tick() {
+  try {
+    const r = await fetch("api/state", { cache: "no-store" });
+    if (!r.ok) throw new Error(r.status);
+    const s = await r.json();
+    const status = s.status;
+    $("status").textContent = status; $("status").className = `pill ${status}`;
+    $("device").textContent = `${s.device_id} · v${s.version}`;
+    const cam = s.camera || {};
+    $("camline").innerHTML = cam.ok
+      ? `<span class="ok">Camera ok</span> · ${esc(cam.fps)} fps · ${esc(cam.sensor)}`
+      : `<span class="bad">Camera down</span> · ${esc(cam.error)}`;
+    const b = s.bridge || {};
+    $("bridge").textContent = b.position || "unknown";
+    $("bridgenote").textContent = b.position && b.position !== "unknown" ? `${Math.round((b.confidence || 0) * 100)}% confidence` : "No detector running yet.";
+    const t = s.telemetry || {};
+    const thr = t.throttled || {};
+    const rows = [
+      ["CPU temp", fmt.temp(t.cpu_temp_c), t.cpu_temp_c > 75 ? "warn" : ""],
+      ["CPU", fmt.pct(t.cpu_percent)],
+      ["Load (1 min)", t.load_1m ?? "–"],
+      ["RAM", fmt.pct(t.ram_percent)],
+      ["Disk used", fmt.pct(t.disk_percent)],
+      ["Disk free", t.disk_free_gb == null ? "–" : `${t.disk_free_gb} GB`],
+      ["Input voltage", fmt.volt(t.input_voltage_v), thr.under_voltage_now ? "bad" : ""],
+      ["Undervoltage", thr.raw == null ? "–" : thr.under_voltage_now ? "now" : thr.under_voltage_occurred ? "since boot" : "no", thr.under_voltage_now ? "bad" : thr.under_voltage_occurred ? "warn" : ""],
+      ["Throttled", thr.raw == null ? "–" : thr.throttled_now ? "now" : thr.throttled_occurred ? "since boot" : "no", thr.throttled_now ? "bad" : ""],
+      ["Uptime", fmt.up(t.uptime_s)],
+      ["Model", t.model || "–"],
+      ["IP", (t.ip || []).join(", ") || "–"],
+      ["Publisher", s.publisher?.driver || "–"],
+    ];
+    $("tel").innerHTML = rows.map(([k, v, c]) => `<dt>${k}</dt><dd class="${c || ""}">${esc(v)}</dd>`).join("");
+    $("auth").textContent = s.auth_enabled ? "" : "No WTH_WEB_PASSWORD set: this panel is open to anyone on the network.";
+  } catch (e) {
+    $("status").textContent = "unreachable"; $("status").className = "pill offline";
+  }
+}
+tick(); setInterval(tick, 2000);
+</script>
+</body>
+</html>

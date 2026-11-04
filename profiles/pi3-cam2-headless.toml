@@ -1,0 +1,25 @@
+# The original Pi 3 setup: Camera Module 2 (or v1), no screen.
+# Pi 3's lores stream only offers YUV420, so the web preview is greyscale.
+
+[hardware]
+model_match = "Raspberry Pi 3"
+needs_spi = false
+needs_camera = true
+
+[camera]
+driver = "picamera2"
+main_size = [1280, 720]
+lores_size = [640, 360]
+lores_format = "YUV420"
+framerate = 10
+
+[display]
+driver = "none"
+
+[web]
+enabled = true
+port = 8080
+preview_fps = 4
+
+[publisher]
+driver = "console"
