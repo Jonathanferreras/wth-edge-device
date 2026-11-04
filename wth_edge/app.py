@@ -38,6 +38,7 @@ class Device:
         self.camera.setup_recording(config.recording)
         self.recorder = Recorder(config, self.camera, self.store)
         self.detectors = None
+        self.notifier = None
         self.ais = None
         if config.ais.enabled:
             from .ais import AisSource
@@ -56,6 +57,11 @@ class Device:
                 self.detectors = DetectorRunner(config, self.bus, history=history, ais=self.ais)
                 self.detectors.add_listener(AutoRecorder(config.autorecord, config.detectors.log_interval_s, self.recorder))
                 self.detectors.add_listener(self._on_detections)
+                if config.notify.enabled:
+                    from .notify import Notifier
+
+                    self.notifier = Notifier(config.notify, config.device.id)
+                    self.detectors.add_listener(self.notifier)
             else:
                 log.warning("detectors disabled: OpenCV not installed (apt install python3-opencv)")
         self.stop_event = threading.Event()
@@ -133,6 +139,8 @@ class Device:
                 if ais is not None:
                     self._state["ais"] = ais
                 self._state["publisher"] = self.publisher.status()
+                if self.notifier is not None:
+                    self._state["notify"] = self.notifier.status()
                 rec = self.recorder.status()
                 self._state["recording"] = {k: rec[k] for k in ("available", "recording", "label", "elapsed_s", "trigger")}
                 self._state["status"] = self._status(health.ok, self._state["telemetry"])
@@ -188,6 +196,8 @@ class Device:
         self.camera.start()
         if self.ais is not None:
             self.ais.start()
+        if self.notifier is not None:
+            self.notifier.start()
         if self.detectors is not None:
             self.detectors.start()
         self._spawn(self._state_loop, "state")
@@ -202,6 +212,8 @@ class Device:
             self.recorder.close()
         except Exception:
             log.exception("could not finish the clip being recorded")
+        if self.notifier is not None:
+            self.notifier.stop()
         self.camera.stop()
         if self.ais is not None:
             self.ais.stop()

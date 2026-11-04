@@ -16,6 +16,9 @@
   only place that maps a phase to the web app's fields. A boat never starts an opening on its own.
 - Bridge state follows the web app's rules: when the bridge isn't `closed`, traffic is `standstill` or
   `unknown`; wait time only exists while `opening`, `open` or `closing`. Keep that in `website()`.
+- Phone alerts live in `wth_edge/notify.py`: `AlertRules` is pure (events and state in, alerts out, all
+  debounce there), `Notifier` is a detector listener that sends on its own thread. Channel secrets come
+  from `/etc/wth/secrets.env`, never the toml.
 - External sources (AIS today) are threads that fill a table; the detector loop reads a snapshot and hands
   it to `Pipeline.process`, so `eval` can replay without them.
 - Pi-only imports (`picamera2`, `libcamera`, `spidev`, `gpiozero`) stay inside the driver that needs them, so

@@ -276,6 +276,37 @@ class AisSection:
 
 
 @dataclass
+class NotifySection:
+    """Phone alerts (see ``wth_edge/notify.py``). Secrets go in ``/etc/wth/secrets.env``.
+
+    ``channels``: any of "ntfy", "telegram", "discord", "email", "console".
+    ``on``: boat_approaching (AIS), boat_seen (camera), gates_down, opening, closed.
+    """
+
+    enabled: bool = False
+    channels: tuple[str, ...] = ("ntfy",)
+    on: tuple[str, ...] = ("boat_approaching", "boat_seen", "gates_down", "opening", "closed")
+    # The same kind of alert again no sooner than this.
+    cooldown_s: float = 900.0
+    # The same AIS vessel is announced once in this long.
+    vessel_cooldown_s: float = 3600.0
+    # Announce an AIS vessel only once it is due within this long.
+    ais_max_eta_s: float = 900.0
+    # Hard cap, whatever the detectors do. 0 = no cap.
+    max_per_hour: int = 8
+    # Local hours with no alerts: (start, end). Equal = never quiet.
+    quiet_hours: tuple[int, int] = (0, 0)
+    # Opened when the alert is tapped (ntfy, Telegram), e.g. the website.
+    click_url: str = ""
+    ntfy_server: str = "https://ntfy.sh"
+    # 1 (min) to 5 (max); 4 makes a sound and shows on the lock screen.
+    ntfy_priority: int = 4
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = 587
+    timeout_s: float = 10.0
+
+
+@dataclass
 class AutoRecordSection:
     enabled: bool = True
     on_bridge: bool = True     # record from gates_down until traffic flows again
@@ -347,6 +378,7 @@ class Config:
     opening: OpeningSection = field(default_factory=OpeningSection)
     ais: AisSection = field(default_factory=AisSection)
     autorecord: AutoRecordSection = field(default_factory=AutoRecordSection)
+    notify: NotifySection = field(default_factory=NotifySection)
     site: SiteSection = field(default_factory=SiteSection)
     # Files that were merged, in order, for `wth-edge doctor` and logs.
     sources: list[str] = field(default_factory=list)

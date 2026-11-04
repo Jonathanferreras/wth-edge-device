@@ -1,4 +1,4 @@
-"""Command line: ``wth-edge run | display | play | art | doctor | config | update | import-dataset | eval | ais``."""
+"""Command line: ``wth-edge run | display | play | art | doctor | config | update | import-dataset | eval | ais | notify-test``."""
 
 from __future__ import annotations
 
@@ -69,6 +69,8 @@ def main(argv: list[str] | None = None) -> int:
     ev.add_argument("--out", help="write per-clip results to a .json or .csv file")
     ais_p = sub.add_parser("ais", help="watch the AIS vessel feed for a while and print what it sees")
     ais_p.add_argument("--minutes", type=float, default=2.0, help="how long to listen (default 2)")
+    nt = sub.add_parser("notify-test", help="send a test phone alert on every [notify] channel")
+    nt.add_argument("--channel", action="append", help="only this channel (repeatable)")
     args = parser.parse_args(argv)
     _setup_logging(args.verbose)
 
@@ -187,6 +189,17 @@ def main(argv: list[str] | None = None) -> int:
         finally:
             src.stop()
         return 0
+    if args.cmd == "notify-test":
+        from .notify import Notifier, sample_alert
+
+        if args.channel:
+            cfg.notify.channels = tuple(args.channel)
+        if not cfg.notify.enabled:
+            print("note: [notify] enabled = false, so the device won't send these until you turn it on")
+        results = Notifier(cfg.notify, cfg.device.id).deliver(sample_alert())
+        for ch, err in results.items():
+            print(f"  {'✓' if err is None else '✗'} {ch:<9} {err or 'sent'}")
+        return 0 if results and all(err is None for err in results.values()) else 1
     if args.cmd == "config":
         print(json.dumps(asdict(cfg), indent=2, default=str))
         return 0

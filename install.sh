@@ -197,6 +197,10 @@ if [[ ! -f "$SECRETS_FILE" ]] || ! grep -q '^WTH_WEB_PASSWORD=' "$SECRETS_FILE";
     echo "WTH_WEB_PASSWORD=$NEW_PASSWORD"
   } >>"$SECRETS_FILE"
 fi
+# A private ntfy topic for phone alerts ([notify] in device.toml). The topic is the password.
+if ! grep -q '^WTH_NTFY_TOPIC=' "$SECRETS_FILE"; then
+  echo "WTH_NTFY_TOPIC=wth-$(python3 -c 'import secrets; print(secrets.token_urlsafe(12))')" >>"$SECRETS_FILE"
+fi
 chown root:"$SERVICE_USER" "$SECRETS_FILE"; chmod 0640 "$SECRETS_FILE"
 
 # ---------------------------------------------------------------- python
@@ -239,6 +243,7 @@ echo "  web panel : http://$(hostname).local:$WEB_PORT  (or http://$IP:$WEB_PORT
 if [[ -n "$NEW_PASSWORD" ]]; then
   echo "  login     : wth / $NEW_PASSWORD   (stored in $SECRETS_FILE)"
 fi
+echo "  alerts    : ntfy topic $(grep '^WTH_NTFY_TOPIC=' "$SECRETS_FILE" | cut -d= -f2)  (subscribe in the ntfy app; [notify] enabled = true in $DEVICE_FILE)"
 echo "  logs      : journalctl -u wth-edge -f"
 if [[ $REBOOT_NEEDED -eq 1 ]]; then
   echo

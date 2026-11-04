@@ -55,7 +55,7 @@ to go back to the site file).
 | `profiles/*.toml` | Hardware: camera model and resolution, screen driver and pins, which services run | yes |
 | `sites/*.toml` | One window's calibration: ROIs as fractions of the frame, compass directions | yes |
 | `/etc/wth/device.toml` | This Pi's id, profile, site, and any local overrides | no |
-| `/etc/wth/secrets.env` | `WTH_WEB_PASSWORD` and, later, backend credentials | no |
+| `/etc/wth/secrets.env` | `WTH_WEB_PASSWORD`, `WTH_AISSTREAM_KEY`, alert channel secrets (`WTH_NTFY_TOPIC`, ...) and, later, backend credentials | no |
 
 Profiles today:
 
@@ -134,7 +134,41 @@ deck, phase, the boat box and direction, the nearest AIS vessel, once a second, 
 event), to use as draft labels. Events also go to the publisher.
 
 Settings: `[detectors]`, `[bridge_detector]`, `[traffic_detector]`, `[boat_detector]`,
-`[opening]`, `[ais]`, `[autorecord]` (see `wth_edge/config.py` for every knob).
+`[opening]`, `[ais]`, `[autorecord]`, `[notify]` (see `wth_edge/config.py` for every knob).
+
+### Phone alerts
+
+The device can push an alert to your phone when a boat is on its way (AIS), the camera
+sees a boat, the gates go down, the bridge opens, and when traffic moves again. All of
+it is free:
+
+1. Install the **ntfy** app (iOS / Android) and subscribe to the topic `install.sh` put
+   in `/etc/wth/secrets.env` as `WTH_NTFY_TOPIC` (it prints it at the end). Anyone who
+   knows the topic can read it, so keep it private.
+2. Turn alerts on in `/etc/wth/device.toml` and restart:
+
+   ```toml
+   [notify]
+   enabled = true
+   channels = ["ntfy"]          # also: "telegram", "discord", "email", "console"
+   # on = ["boat_approaching", "boat_seen", "gates_down", "opening", "closed"]
+   # quiet_hours = [22, 7]
+   # click_url = "https://your-site.example"
+   ```
+3. Send a test: `sudo bash -c 'set -a; . /etc/wth/secrets.env; wth-edge notify-test'`.
+
+Other channels, secrets in `secrets.env`: Telegram (`WTH_TELEGRAM_TOKEN`,
+`WTH_TELEGRAM_CHAT_ID`), a Discord webhook (`WTH_DISCORD_WEBHOOK`), or email over SMTP
+(`WTH_SMTP_USER`, `WTH_SMTP_PASSWORD` (a Gmail app password), `WTH_ALERT_EMAIL_TO`). Email
+also reaches carriers' email-to-SMS gateways (`5551234567@tmomail.net`,
+`5551234567@vtext.com`), but those are slow and filtered, and AT&T has shut its down;
+use the push channels if you can.
+
+Alerts fire on transitions only and stay quiet: one opening gives at most one "gates down",
+one "opening" and one "closed" (a gates-down false alarm ends silently), a camera boat
+during an opening is folded into the opening alert, each AIS vessel is announced once an
+hour and only when due within `ais_max_eta_s`, each kind has a `cooldown_s` (15 min), and
+`max_per_hour` (8) caps the total. Alerts need the detectors running.
 
 ### Checking the detectors against recorded clips
 

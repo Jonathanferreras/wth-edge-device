@@ -99,6 +99,16 @@ def run_doctor(config) -> int:
             except ImportError:
                 results.append(_line(WARN, "ais", "websockets package missing; apt install python3-websockets"))
 
+    if config.notify.enabled:
+        from .notify import missing_secrets
+
+        for ch in config.notify.channels:
+            missing = missing_secrets(ch.lower())
+            if missing:
+                results.append(_line(WARN, f"alerts: {ch}", f"{', '.join(missing)} not set in /etc/wth/secrets.env"))
+            else:
+                results.append(_line(OK, f"alerts: {ch}", f"on: {', '.join(config.notify.on)} (try `wth-edge notify-test`)"))
+
     if os.geteuid() == 0:
         try:
             groups = {g.gr_name for g in grp.getgrall() if "wth" in g.gr_mem}
