@@ -143,6 +143,10 @@ class BridgeTracker:
         return None
 
     @property
+    def rate(self) -> float:
+        return round(self._rate(), 2)
+
+    @property
     def confidence(self) -> float:
         if self.position == "unknown" or not self._seen:
             return 0.0

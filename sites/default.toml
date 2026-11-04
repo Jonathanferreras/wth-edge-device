@@ -11,6 +11,11 @@
 name = "default"
 left_is = "WEST"
 right_is = "EAST"
+# Approaches the camera can see a boat on. The west approach is mostly hidden from this window.
+approach_sides = ["east"]
+# The bridge's position for AIS (decimal degrees). Set both to turn the distance maths on.
+bridge_lat = 0.0
+bridge_lon = 0.0
 
 [site.rois.bridge]
 x = 0.13
@@ -23,3 +28,33 @@ x = 0.24
 y = 0.61
 w = 0.76   # to the right edge: the whole visible path of a boat
 h = 0.21
+
+# Lanes and deck for the traffic detector and the opening state machine. Rough placement
+# from the bridge box; drag them into place in the panel ("Adjust boxes").
+#   northbound: the approach lanes that drive away from the camera, up to their gate
+#   southbound: the approach lanes that drive toward the camera, at the far end
+#   deck:       the roadway between the two gates (clear while the bridge is up)
+#   far_leaf:   the leaf that lifts first, at the far end of the span
+[site.rois.northbound]
+x = 0.10
+y = 0.60
+w = 0.08
+h = 0.10
+
+[site.rois.southbound]
+x = 0.30
+y = 0.52
+w = 0.08
+h = 0.07
+
+[site.rois.deck]
+x = 0.17
+y = 0.56
+w = 0.14
+h = 0.07
+
+[site.rois.far_leaf]
+x = 0.24
+y = 0.42
+w = 0.10
+h = 0.18

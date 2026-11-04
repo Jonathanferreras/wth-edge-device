@@ -30,6 +30,14 @@ def new_state(device_id: str, version: str) -> dict[str, Any]:
         # Filled by the detectors; "unknown" until they have seen enough.
         "bridge": {"position": "unknown", "confidence": 0.0, "angle_deg": None, "since": None, "line": None},
         "boat": {"present": False, "direction": None, "confidence": 0.0, "since": None, "box": None},
+        "far_leaf": {"position": "unknown", "confidence": 0.0, "angle_deg": None, "since": None, "line": None},
+        # Per direction: level (light / moderate / heavy / standstill / unknown), confidence, flow, fill.
+        "traffic": {},
+        "deck": None,
+        # The opening state machine: phase, since, confidence, wait, and the website fields.
+        "opening": None,
+        # Vessels from AIS, when configured.
+        "ais": None,
         "detector": None,
         "telemetry": {},
         "publisher": {"driver": None, "ok": None, "last_publish_at": None},

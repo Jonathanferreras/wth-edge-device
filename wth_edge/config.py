@@ -179,9 +179,95 @@ class BoatDetectorSection:
 
 
 @dataclass
+class TrafficDetectorSection:
+    """Traffic flow and fill per lane box (``northbound``, ``southbound``) and the ``deck``.
+
+    Two cheap measures on the lores frame: *flow* is how much of the box changed since the
+    previous detector frame (cars moving), *fill* is how much of the box differs from a slow
+    background (cars present, moving or not). Levels follow the web app: light, moderate,
+    heavy, standstill, unknown.
+    """
+
+    enabled: bool = True
+    # Boxes are shrunk to this many pixels wide before measuring.
+    work_width: int = 160
+    # Pixel difference (0-255) that counts as a change.
+    diff_threshold: int = 24
+    # Fill below this is an empty lane. Boxes are mostly road, so a few percent is a car;
+    # the panel shows live flow and fill per lane to tune these.
+    present_min: float = 0.02
+    # Fill thresholds for light / moderate / heavy while traffic moves.
+    moderate_min: float = 0.06
+    heavy_min: float = 0.15
+    # Flow below this is "not moving". Standstill = present and not moving for standstill_s.
+    flow_min: float = 0.003
+    standstill_s: float = 8.0
+    # Measures are averaged over this window.
+    window_s: float = 6.0
+    # A level must hold this long before it is reported.
+    hold_s: float = 3.0
+    # Background learning rate per detector frame (small = cars stay "foreground" for minutes).
+    background_rate: float = 0.002
+    # Deck fill below this means the deck is clear.
+    deck_clear_max: float = 0.03
+
+
+@dataclass
+class OpeningSection:
+    """The bridge opening state machine (see docs: Bridge opening state machine).
+
+    Phases: flowing, gates_down, lifting, raised, lowering, releasing, unknown. Durations are
+    seconds and are the defaults for the wait estimate until the device has seen openings of
+    its own (kept in ``<data_dir>/openings.json``).
+    """
+
+    enabled: bool = True
+    # Both directions standstill with the deck clear this long -> gates_down.
+    gates_down_hold_s: float = 20.0
+    # gates_down with no lift and no boat for this long -> back to flowing.
+    false_alarm_s: float = 180.0
+    # Leaf steady and high this long -> raised; flat this long -> releasing.
+    raised_hold_s: float = 3.0
+    flat_hold_s: float = 3.0
+    # Either direction moving again this long -> flowing.
+    release_hold_s: float = 10.0
+    # No usable traffic or leaf signal for this long -> unknown.
+    unknown_after_s: float = 30.0
+    # Typical phase durations until the device has its own history.
+    default_gates_down_s: float = 60.0
+    default_lifting_s: float = 120.0
+    default_raised_s: float = 60.0
+    default_lowering_s: float = 120.0
+    default_releasing_s: float = 30.0
+    # How many past openings the wait estimate remembers.
+    history: int = 30
+
+
+@dataclass
+class AisSection:
+    """Vessel positions from AIS, so boats are known before the camera sees them.
+
+    ``driver``: "none", or "aisstream" (aisstream.io websocket; key in ``WTH_AISSTREAM_KEY``).
+    A local receiver (RTL-SDR + AIS-catcher) can feed the same interface later.
+    """
+
+    enabled: bool = False
+    driver: str = "aisstream"
+    url: str = "wss://stream.aisstream.io/v0/stream"
+    # Vessels within this distance of the bridge are tracked.
+    radius_m: float = 1600.0
+    # A vessel is "approaching" when closing on the bridge at least this fast (knots).
+    approach_min_knots: float = 0.5
+    # Forget a vessel after this long without a report.
+    stale_s: float = 300.0
+    # Reconnect wait after a dropped connection.
+    retry_s: float = 10.0
+
+
+@dataclass
 class AutoRecordSection:
     enabled: bool = True
-    on_bridge: bool = True     # record while the bridge is opening / open / closing
+    on_bridge: bool = True     # record from gates_down until traffic flows again
     on_boat: bool = True       # record while a boat is crossing
     # Keep recording this long after the bridge is closed and no boat is seen.
     post_roll_s: float = 20.0
@@ -222,6 +308,12 @@ class SiteSection:
     name: str = "default"
     left_is: str = "WEST"
     right_is: str = "EAST"
+    # Which approaches the camera can see a boat on, so a missing boat on a blind side
+    # never counts against an opening.
+    approach_sides: tuple[str, ...] = ("east",)
+    # The bridge's position, for AIS distances. 0,0 = not set.
+    bridge_lat: float = 0.0
+    bridge_lon: float = 0.0
     rois: dict[str, Roi] = field(default_factory=dict)
 
 
@@ -240,6 +332,9 @@ class Config:
     detectors: DetectorsSection = field(default_factory=DetectorsSection)
     bridge_detector: BridgeDetectorSection = field(default_factory=BridgeDetectorSection)
     boat_detector: BoatDetectorSection = field(default_factory=BoatDetectorSection)
+    traffic_detector: TrafficDetectorSection = field(default_factory=TrafficDetectorSection)
+    opening: OpeningSection = field(default_factory=OpeningSection)
+    ais: AisSection = field(default_factory=AisSection)
     autorecord: AutoRecordSection = field(default_factory=AutoRecordSection)
     site: SiteSection = field(default_factory=SiteSection)
     # Files that were merged, in order, for `wth-edge doctor` and logs.

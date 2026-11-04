@@ -85,6 +85,20 @@ def run_doctor(config) -> int:
         except ImportError:
             results.append(_line(WARN, "opencv", "missing: detectors off; apt install python3-opencv"))
 
+    if config.ais.enabled:
+        site = config.site
+        if not (site.bridge_lat or site.bridge_lon):
+            results.append(_line(WARN, "ais", "site.bridge_lat / bridge_lon not set: vessel distances need them"))
+        elif not os.environ.get("WTH_AISSTREAM_KEY") and config.ais.driver == "aisstream":
+            results.append(_line(WARN, "ais", "WTH_AISSTREAM_KEY not set (free key at aisstream.io; put it in /etc/wth/secrets.env)"))
+        else:
+            try:
+                import websockets  # noqa: F401
+
+                results.append(_line(OK, "ais", f"{config.ais.driver}, {config.ais.radius_m:.0f} m around {site.bridge_lat}, {site.bridge_lon}"))
+            except ImportError:
+                results.append(_line(WARN, "ais", "websockets package missing; apt install python3-websockets"))
+
     if os.geteuid() == 0:
         try:
             groups = {g.gr_name for g in grp.getgrall() if "wth" in g.gr_mem}

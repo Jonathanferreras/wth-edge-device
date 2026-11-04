@@ -28,7 +28,7 @@ from ..recording import RecordingError
 
 BOUNDARY = "wthframe"
 DETECT_COLOUR = (239, 68, 68)
-ROI_COLOURS = [(33, 209, 159), (250, 204, 21), (96, 165, 250), (244, 114, 182)]
+ROI_COLOURS = [(33, 209, 159), (250, 204, 21), (96, 165, 250), (244, 114, 182), (167, 139, 250), (251, 146, 60), (45, 212, 191)]
 
 
 def encode_jpeg(image, quality: int, rois: dict | None = None, det: dict | None = None) -> bytes:
@@ -44,11 +44,18 @@ def encode_jpeg(image, quality: int, rois: dict | None = None, det: dict | None 
             d.rectangle(box, outline=colour, width=2)
             d.text((box[0] + 4, box[1] + 2), name, fill=colour)
         if det:
-            bridge, boat = det.get("bridge") or {}, det.get("boat") or {}
-            if line := bridge.get("line"):
-                d.line((line[0] * W, line[1] * H, line[2] * W, line[3] * H), fill=DETECT_COLOUR, width=3)
-                if bridge.get("angle_deg") is not None:
-                    d.text((line[0] * W, line[1] * H - 12), f"{bridge['angle_deg']:.0f}° {bridge.get('position', '')}", fill=DETECT_COLOUR)
+            boat = det.get("boat") or {}
+            for leaf in (det.get("bridge") or {}, det.get("far_leaf") or {}):
+                if line := leaf.get("line"):
+                    d.line((line[0] * W, line[1] * H, line[2] * W, line[3] * H), fill=DETECT_COLOUR, width=3)
+                    if leaf.get("angle_deg") is not None:
+                        d.text((line[0] * W, line[1] * H - 12), f"{leaf['angle_deg']:.0f}° {leaf.get('position', '')}", fill=DETECT_COLOUR)
+            for name, lane in (det.get("traffic") or {}).items():
+                if rois and name in rois and lane.get("level"):
+                    box = rois[name].to_pixels(W, H)
+                    d.text((box[0] + 4, box[3] - 12), f"{lane['level']} {lane.get('flow') or 0:.3f}", fill=DETECT_COLOUR)
+            if (opening := det.get("opening")) and opening.get("phase"):
+                d.text((6, H - 14), f"{opening['phase']} · {opening.get('position', '')}", fill=DETECT_COLOUR)
             if box := boat.get("box"):
                 px = (box[0] * W, box[1] * H, box[2] * W, box[3] * H)
                 d.rectangle(px, outline=DETECT_COLOUR, width=3)
@@ -91,6 +98,8 @@ def create_app(config, bus: FrameBus, get_state: Callable[[], dict[str, Any]], r
         st["auth_enabled"] = bool(password)
         st["temperature_unit"] = config.ui.temperature_unit.upper()
         st["rois"] = {k: vars(v) for k, v in rois.items()}
+        st["site"] = {"bridge_lat": config.site.bridge_lat, "bridge_lon": config.site.bridge_lon,
+                      "approach_sides": list(config.site.approach_sides), "ais_enabled": config.ais.enabled}
         return JSONResponse(st)
 
     @app.get("/snapshot.jpg", dependencies=[Depends(auth)])

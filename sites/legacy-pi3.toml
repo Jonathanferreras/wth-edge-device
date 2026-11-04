@@ -9,6 +9,7 @@
 name = "legacy-pi3"
 left_is = "WEST"
 right_is = "EAST"
+approach_sides = ["east"]
 
 [site.rois.bridge]
 x = 0.353
@@ -21,3 +22,28 @@ x = 0.461
 y = 0.708
 w = 0.539
 h = 0.139
+
+# Lanes, deck and far leaf in the wide framing used from 2026-04-03 (earlier clips were zoomed in).
+[site.rois.northbound]
+x = 0.29
+y = 0.69
+w = 0.09
+h = 0.09
+
+[site.rois.southbound]
+x = 0.50
+y = 0.62
+w = 0.09
+h = 0.06
+
+[site.rois.deck]
+x = 0.37
+y = 0.65
+w = 0.17
+h = 0.08
+
+[site.rois.far_leaf]
+x = 0.48
+y = 0.52
+w = 0.10
+h = 0.16

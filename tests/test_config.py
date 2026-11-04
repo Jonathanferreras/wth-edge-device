@@ -26,7 +26,8 @@ def test_pi5_profile_matches_verified_wiring(tmp_path):
     assert (cfg.display.dc_pin, cfg.display.rst_pin, cfg.display.spi_device) == (25, 27, 0)
     assert cfg.hardware.model_match == "Raspberry Pi 5"
     assert cfg.paths.state_file == "/run/wth/state.json"
-    assert set(cfg.site.rois) == {"boat", "bridge"}
+    assert set(cfg.site.rois) == {"boat", "bridge", "northbound", "southbound", "deck", "far_leaf"}
+    assert cfg.site.approach_sides == ("east",)
 
 
 def test_device_file_overrides_profile(tmp_path):

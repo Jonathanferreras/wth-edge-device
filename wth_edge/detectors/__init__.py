@@ -1,4 +1,4 @@
-"""Detectors: bridge position and boat crossings, read from the FrameBus.
+"""Detectors: leaf angles, traffic per lane, boat crossings, and the opening state machine.
 
 ``Pipeline`` is frame in, events and state out, with no threads or camera, so the live
 device and ``wth-edge eval`` run exactly the same code. ``DetectorRunner`` feeds it from
@@ -27,17 +27,29 @@ def opencv_available() -> bool:
     return True
 
 
+LANES = ("northbound", "southbound")
+# Leaf boxes: "bridge" is the near leaf (the old single box), "far_leaf" the other one.
+LEAVES = {"bridge": "near", "far_leaf": "far"}
+
+
 class Pipeline:
-    def __init__(self, config, rois: dict | None = None, repo_root=None) -> None:
+    def __init__(self, config, rois: dict | None = None, repo_root=None, history=None) -> None:
         from ..config import REPO_ROOT
+        from ..opening import OpeningMachine
         from .boat import BoatTracker, MotionGate, YoloBoat
         from .bridge import BridgeTracker
+        from .traffic import DeckTracker, LaneTracker, LaneWatcher
 
         self.config = config
         # The live dict: ROIs saved from the web panel apply on the next frame.
         self.rois = rois if rois is not None else config.site.rois
-        bcfg, boat = config.bridge_detector, config.boat_detector
+        bcfg, boat, tcfg = config.bridge_detector, config.boat_detector, config.traffic_detector
         self.bridge = BridgeTracker(bcfg) if bcfg.enabled else None
+        self.far_leaf = BridgeTracker(bcfg) if bcfg.enabled else None
+        self.lanes = {name: LaneTracker(tcfg) for name in LANES} if tcfg.enabled else {}
+        self.watchers = {name: LaneWatcher(tcfg) for name in (*LANES, "deck")} if tcfg.enabled else {}
+        self.deck = DeckTracker(tcfg) if tcfg.enabled else None
+        self.machine = OpeningMachine(config.opening, bcfg, config.site.approach_sides, history) if config.opening.enabled else None
         self.motion = MotionGate(boat) if boat.enabled else None
         self.yolo = None
         self.yolo_error: str | None = None
@@ -53,21 +65,36 @@ class Pipeline:
         self._last_motion_at: float | None = None
         self.last_ms: float = 0.0
 
-    def process(self, t: float, frame: np.ndarray, hires=None) -> list[dict[str, Any]]:
+    def process(self, t: float, frame: np.ndarray, hires=None, ais: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         """``frame``: the lores RGB frame. ``hires``: an optional ``HiRes`` full-res frame,
-        which the bridge (thin edges) and the boat model (small boats) both need."""
+        which the bridge (thin edges) and the boat model (small boats) both need. ``ais``:
+        the latest ``AisSource.snapshot()``, when there is one."""
         from .bridge import measure_angle
 
         t0 = time.perf_counter()
         events: list[dict[str, Any]] = []
         rois = self.rois
-        if self.bridge is not None and "bridge" in rois:
-            before = self.bridge.position
+        for name, which in LEAVES.items():
+            tracker = self.bridge if which == "near" else self.far_leaf
+            if tracker is None or name not in rois:
+                continue
+            before = tracker.position
             src = hires.grey() if hires is not None else frame
-            changed = self.bridge.update(t, measure_angle(src, rois["bridge"], self.config.bridge_detector))
+            changed = tracker.update(t, measure_angle(src, rois[name], self.config.bridge_detector))
             if changed:
-                events.append({"type": "bridge", "at": t, "position": changed, "previous": before,
-                               "angle_deg": self.bridge.state()["angle_deg"]})
+                events.append({"type": "bridge", "at": t, "leaf": which, "position": changed, "previous": before,
+                               "angle_deg": tracker.state()["angle_deg"]})
+        for name, watcher in self.watchers.items():
+            if name not in rois:
+                continue
+            reading = watcher.update(frame, rois[name])
+            if name == "deck":
+                self.deck.update(t, reading)
+            else:
+                before = self.lanes[name].level
+                changed = self.lanes[name].update(t, reading)
+                if changed:
+                    events.append({"type": "traffic", "at": t, "direction": name, "level": changed, "previous": before})
         if self.boats is not None and "boat" in rois:
             cfg = self.config.boat_detector
             moving = self.motion.update(frame, rois["boat"]) if self.motion else None
@@ -86,12 +113,41 @@ class Pipeline:
                     events += self.boats.tick(t)
             else:
                 events += self.boats.update(t, moving)
+        if self.machine is not None:
+            events += self.machine.update(t, self.signals(ais))
         self.last_ms = (time.perf_counter() - t0) * 1000
         return events
+
+    def signals(self, ais: dict[str, Any] | None = None):
+        """What the state machine sees, built from the trackers."""
+        from ..opening import Signals
+
+        s = Signals()
+        for name, tr in self.lanes.items():
+            setattr(s, name, tr.level)
+            setattr(s, f"{name}_confidence", tr.confidence)
+            setattr(s, f"{name}_moving", tr.moving)
+        if self.deck is not None:
+            s.deck_clear, s.deck_moving = self.deck.clear, self.deck.moving
+        for which, tr in (("near", self.bridge), ("far", self.far_leaf)):
+            if tr is not None and tr.angle is not None and tr.position != "unknown":
+                s.leaf_angles[which] = tr.angle
+                s.leaf_rates[which] = tr.rate
+                s.leaf_positions[which] = tr.position
+        if self.boats is not None:
+            b = self.boats.state()
+            s.boat_present, s.boat_direction, s.boat_confidence = b["present"], b["direction"], b["confidence"]
+        if ais and (v := ais.get("approaching")):
+            s.ais_side, s.ais_eta_s, s.ais_name = v.get("side"), v.get("eta_s"), v.get("name")
+        return s
 
     def state(self) -> dict[str, Any]:
         return {
             "bridge": self.bridge.state() if self.bridge else {"position": "unknown", "confidence": 0.0},
+            "far_leaf": self.far_leaf.state() if self.far_leaf else {"position": "unknown", "confidence": 0.0},
+            "traffic": {name: tr.state() for name, tr in self.lanes.items()},
+            "deck": self.deck.state() if self.deck else None,
+            "opening": self.machine.state() if self.machine else None,
             "boat": self.boats.state() if self.boats else {"present": False},
             "detector": {
                 "ms_per_frame": round(self.last_ms, 1),
@@ -103,10 +159,11 @@ class Pipeline:
 
 
 class DetectorRunner:
-    def __init__(self, config, bus, rois: dict | None = None) -> None:
+    def __init__(self, config, bus, rois: dict | None = None, history=None, ais=None) -> None:
         self.config = config
         self.bus = bus
-        self.pipeline = Pipeline(config, rois)
+        self.ais = ais  # an AisSource, or None
+        self.pipeline = Pipeline(config, rois, history=history)
         self.listeners: list[Listener] = []
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -144,7 +201,8 @@ class DetectorRunner:
                 continue
             next_at = now + period
             try:
-                events = self.pipeline.process(frame.timestamp, frame.image, frame.hires)
+                snap = self.ais.snapshot() if self.ais is not None else None
+                events = self.pipeline.process(frame.timestamp, frame.image, frame.hires, snap)
                 self.error = None
             except Exception as exc:
                 self.error = f"{type(exc).__name__}: {exc}"
@@ -156,6 +214,8 @@ class DetectorRunner:
     def _tick(self, events: list[dict[str, Any]]) -> None:
         st = self.pipeline.state()
         st["detector"]["error"] = self.error
+        if self.ais is not None:
+            st["ais"] = self.ais.snapshot()
         with self._lock:
             self._state = st
         for e in events:
