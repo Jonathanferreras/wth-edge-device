@@ -100,14 +100,39 @@ class Camera:
         self._error: str | None = None
         self.sensor: str | None = None
         self.fatal = False
+        # Set by setup_recording(): an object with begin(path) / end().
+        self.clip_writer = None
+        self._rcfg = None
+        self.started_at: float | None = None
+
+    def setup_recording(self, rcfg) -> None:
+        """Prepare the pre-roll buffer. Default: encode lores frames from the bus with PyAV."""
+        self._rcfg = rcfg
+        if not rcfg.enabled:
+            return
+        try:
+            import av  # noqa: F401
+        except ImportError:
+            log.warning("recording disabled: PyAV not installed (pip install av)")
+            return
+        from ..recording import BusClipWriter
+
+        self.clip_writer = BusClipWriter(self.bus, rcfg.prebuffer_s, self.cfg.framerate)
+
+    def clip_size(self) -> tuple[int, int]:
+        """Resolution of recorded clips."""
+        return tuple(self.cfg.lores_size)
 
     def start(self) -> None:
+        self.started_at = time.time()
         self._stop.clear()
         self._thread = threading.Thread(target=self._run, name=f"camera-{self.name}", daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
         self._stop.set()
+        if self.clip_writer is not None and hasattr(self.clip_writer, "close"):
+            self.clip_writer.close()
         if self._thread:
             self._thread.join(timeout=5)
 

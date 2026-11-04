@@ -31,6 +31,7 @@ def new_state(device_id: str, version: str) -> dict[str, Any]:
         "bridge": {"position": "unknown", "confidence": 0.0},
         "telemetry": {},
         "publisher": {"driver": None, "ok": None, "last_publish_at": None},
+        "recording": {"available": False, "recording": False, "label": None, "elapsed_s": None},
         "web_url": None,
     }
 

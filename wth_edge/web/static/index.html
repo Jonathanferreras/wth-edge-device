@@ -7,25 +7,34 @@
 <style>
   :root {
     --bg: #0a1428; --panel: #13203a; --line: #22324f; --ink: #eef0f4; --quiet: #96a0af;
-    --ok: #21d19f; --warn: #facc15; --bad: #ef4444; --copper: #c87832;
+    --ok: #21d19f; --warn: #facc15; --bad: #ef4444; --copper: #c87832; --accent: #60a5fa;
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; }
   header { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
   header h1 { margin: 0; font-size: 17px; color: var(--copper); letter-spacing: .04em; }
   header .id { color: var(--quiet); font-size: 13px; }
-  .pill { margin-left: auto; padding: 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; background: var(--line); }
+  .pill { padding: 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; background: var(--line); }
+  #status { margin-left: auto; }
   .pill.ok { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok); }
   .pill.degraded, .pill.starting { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
-  .pill.offline { background: color-mix(in srgb, var(--bad) 20%, transparent); color: var(--bad); }
+  .pill.offline, .pill.rec { background: color-mix(in srgb, var(--bad) 22%, transparent); color: var(--bad); }
   main { display: grid; grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); gap: 16px; padding: 16px; max-width: 1280px; margin: 0 auto; }
   @media (max-width: 820px) { main { grid-template-columns: 1fr; } }
   section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
   h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--quiet); }
-  .view img { width: 100%; display: block; border-radius: 6px; background: #000; aspect-ratio: 16 / 9; object-fit: contain; }
+  .frame { position: relative; }
+  .frame img { width: 100%; display: block; border-radius: 6px; background: #000; aspect-ratio: 16 / 9; object-fit: contain; }
+  .frame canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: none; display: none; }
+  .editing .frame canvas { display: block; }
   .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; color: var(--quiet); font-size: 13px; }
-  button { font: inherit; color: var(--ink); background: var(--line); border: 1px solid #33466b; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+  button, select, input[type=text] { font: inherit; color: var(--ink); background: var(--line); border: 1px solid #33466b; border-radius: 6px; padding: 6px 12px; }
+  button { cursor: pointer; }
+  button.primary { background: var(--bad); border-color: var(--bad); color: #fff; font-weight: 600; }
+  button.go { background: var(--ok); border-color: var(--ok); color: #062018; font-weight: 600; }
   button:disabled { opacity: .45; cursor: not-allowed; }
+  input[type=text] { flex: 1; min-width: 140px; }
   dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; }
   dt { color: var(--quiet); }
   dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
@@ -33,28 +42,61 @@
   .ok { color: var(--ok); } .bad { color: var(--bad); } .warn { color: var(--warn); }
   .stack { display: grid; gap: 16px; align-content: start; }
   .note { color: var(--quiet); font-size: 12px; margin-top: 8px; }
+  .wide { grid-column: 1 / -1; }
+  .clips { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+  .clip { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #0e1930; }
+  .clip img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; background: #000; cursor: pointer; }
+  .clip .meta { padding: 8px 10px; font-size: 13px; display: grid; gap: 4px; }
+  .clip .meta .t { font-weight: 600; }
+  .clip .meta .s { color: var(--quiet); }
+  .clip .acts { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 10px 10px; }
+  .clip .acts button, .clip .acts a { font-size: 12px; padding: 4px 8px; }
+  .clip.kept { border-color: var(--ok); }
+  a.btn { color: var(--ink); background: var(--line); border: 1px solid #33466b; border-radius: 6px; text-decoration: none; }
+  dialog { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; padding: 12px; max-width: min(960px, 96vw); }
+  dialog video { width: 100%; display: block; border-radius: 6px; background: #000; }
+  dialog::backdrop { background: rgba(0, 0, 0, .6); }
 </style>
 </head>
 <body>
 <header>
   <h1>WATCH THE HUTCH</h1>
   <span class="id" id="device">…</span>
+  <span class="pill rec" id="recpill" hidden>● REC</span>
   <span class="pill" id="status">…</span>
 </header>
 <main>
-  <section class="view">
+  <section class="view" id="view">
     <h2>Live view</h2>
-    <img id="stream" src="stream.mjpg?overlay=1" alt="Live camera view">
-    <div class="row">
-      <label><input type="checkbox" id="overlay" checked> Show ROIs</label>
+    <div class="frame">
+      <img id="stream" src="stream.mjpg?overlay=1" alt="Live camera view">
+      <canvas id="roicanvas"></canvas>
+    </div>
+    <div class="row" id="viewrow">
+      <label><input type="checkbox" id="overlay" checked> Show boxes</label>
+      <button id="editbtn">Adjust boxes</button>
       <span id="camline"></span>
     </div>
-    <div class="row">
-      <button disabled title="Arrives with the recorder">Start recording</button>
-      <span>Recording controls and clips arrive in the next step.</span>
+    <div class="row" id="editrow" hidden>
+      <span>Drag a box to move it, drag a corner to resize.</span>
+      <button class="go" id="savebtn">Save boxes</button>
+      <button id="cancelbtn">Cancel</button>
+      <span id="editmsg"></span>
     </div>
   </section>
   <div class="stack">
+    <section>
+      <h2>Recording</h2>
+      <div class="row" style="margin-top:0">
+        <select id="label" aria-label="Label"></select>
+        <input type="text" id="note" placeholder="Note (optional)" maxlength="500">
+      </div>
+      <div class="row">
+        <button class="primary" id="recbtn" disabled>Start recording</button>
+        <span id="recline"></span>
+      </div>
+      <div class="note" id="recnote"></div>
+    </section>
     <section>
       <h2>Bridge</h2>
       <div class="big" id="bridge">unknown</div>
@@ -66,7 +108,13 @@
       <div class="note" id="auth"></div>
     </section>
   </div>
+  <section class="wide">
+    <h2>Clips <span id="clipcount" style="text-transform:none;letter-spacing:0"></span></h2>
+    <div class="clips" id="clips"></div>
+    <div class="note" id="clipsempty">No clips yet.</div>
+  </section>
 </main>
+<dialog id="player"><video id="video" controls playsinline></video><div class="row"><span id="playtitle"></span><button id="closeplayer" style="margin-left:auto">Close</button></div></dialog>
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -75,16 +123,31 @@ const fmt = {
   temp: (c, unit) => c == null ? "–" : unit === "C" ? `${c.toFixed(1)} °C` : `${(c * 9 / 5 + 32).toFixed(1)} °F`,
   volt: (v) => v == null ? "–" : `${v.toFixed(2)} V`,
   up: (s) => { if (s == null) return "–"; const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60); return d ? `${d}d ${h}h` : `${h}h ${m}m`; },
+  dur: (s) => s == null ? "" : `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`,
+  mb: (b) => b == null ? "" : `${(b / 1e6).toFixed(1)} MB`,
+  when: (ts) => new Date(ts * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }),
 };
-$("overlay").addEventListener("change", (e) => { $("stream").src = `stream.mjpg?overlay=${e.target.checked ? 1 : 0}&t=${Date.now()}`; });
+async function api(path, opts = {}) {
+  const r = await fetch(path, { cache: "no-store", headers: { "Content-Type": "application/json" }, ...opts });
+  const body = r.headers.get("content-type")?.includes("json") ? await r.json() : null;
+  if (!r.ok) throw new Error(body?.detail || r.status);
+  return body;
+}
 
+// ---------------- live view
+let editing = false;
+function setStream() {
+  if (editing) return;
+  $("stream").src = `stream.mjpg?overlay=${$("overlay").checked ? 1 : 0}&t=${Date.now()}`;
+}
+$("overlay").addEventListener("change", setStream);
+
+// ---------------- state + telemetry
+let state = null;
 async function tick() {
   try {
-    const r = await fetch("api/state", { cache: "no-store" });
-    if (!r.ok) throw new Error(r.status);
-    const s = await r.json();
-    const status = s.status;
-    $("status").textContent = status; $("status").className = `pill ${status}`;
+    const s = state = await api("api/state");
+    $("status").textContent = s.status; $("status").className = `pill ${s.status}`;
     $("device").textContent = `${s.device_id} · v${s.version}`;
     const cam = s.camera || {};
     $("camline").innerHTML = cam.ok
@@ -93,8 +156,7 @@ async function tick() {
     const b = s.bridge || {};
     $("bridge").textContent = b.position || "unknown";
     $("bridgenote").textContent = b.position && b.position !== "unknown" ? `${Math.round((b.confidence || 0) * 100)}% confidence` : "No detector running yet.";
-    const t = s.telemetry || {};
-    const thr = t.throttled || {};
+    const t = s.telemetry || {}, thr = t.throttled || {};
     const rows = [
       ["CPU temp", fmt.temp(t.cpu_temp_c, s.temperature_unit), t.cpu_temp_c > 75 ? "warn" : ""],
       ["CPU", fmt.pct(t.cpu_percent)],
@@ -116,7 +178,162 @@ async function tick() {
     $("status").textContent = "unreachable"; $("status").className = "pill offline";
   }
 }
-tick(); setInterval(tick, 2000);
+
+// ---------------- recording
+let rec = null, lastRecId = null;
+async function recTick() {
+  try { rec = await api("api/recording"); } catch { rec = null; }
+  const sel = $("label");
+  if (rec && !sel.options.length) {
+    sel.innerHTML = `<option value="">No label</option>` + rec.labels.map((l) => `<option value="${esc(l)}">${esc(l)}</option>`).join("");
+  }
+  const on = !!rec?.recording;
+  $("recbtn").disabled = !rec?.available;
+  $("recbtn").textContent = on ? "Stop recording" : "Start recording";
+  $("recbtn").className = on ? "go" : "primary";
+  $("recpill").hidden = !on;
+  $("recline").textContent = on ? `Recording ${fmt.dur(rec.elapsed_s)}${rec.label ? " · " + rec.label : ""}` : "";
+  $("recnote").textContent = !rec ? "" : !rec.available
+    ? "Recording is unavailable with this camera."
+    : `Each clip starts ${rec.prebuffer_s} s before you press start and stops itself after ${Math.round(rec.max_duration_s / 60)} min.`;
+  if ((rec?.clip_id || null) !== lastRecId) { lastRecId = rec?.clip_id || null; loadClips(); }
+}
+$("recbtn").addEventListener("click", async () => {
+  $("recbtn").disabled = true;
+  try {
+    if (rec?.recording) await api("api/recording/stop", { method: "POST" });
+    else await api("api/recording/start", { method: "POST", body: JSON.stringify({ label: $("label").value || null, note: $("note").value }) });
+    $("note").value = "";
+  } catch (e) { alertLine(e.message); }
+  await recTick();
+});
+function alertLine(msg) { $("recnote").textContent = msg; $("recnote").className = "note bad"; setTimeout(() => $("recnote").className = "note", 4000); }
+
+// ---------------- clips
+async function loadClips() {
+  let data;
+  try { data = await api("api/clips"); } catch { return; }
+  const clips = data.clips || [];
+  $("clipsempty").hidden = clips.length > 0;
+  const kept = clips.filter((c) => c.keep).length;
+  $("clipcount").textContent = clips.length ? `· ${clips.length} (${kept} kept)` : "";
+  $("clips").innerHTML = clips.map((c) => `
+    <div class="clip ${c.keep ? "kept" : ""}" data-id="${esc(c.id)}">
+      <img src="clips/${encodeURIComponent(c.id)}.jpg" alt="" loading="lazy" data-act="play">
+      <div class="meta">
+        <span class="t">${esc(fmt.when(c.started_at))}${c.label ? " · " + esc(c.label) : ""}</span>
+        <span class="s">${c.recording ? '<span class="bad">recording…</span>' : esc(fmt.dur(c.duration_s))} · ${esc(fmt.mb(c.size_bytes))} · ${esc(c.trigger)}</span>
+        ${c.note ? `<span class="s">${esc(c.note)}</span>` : ""}
+      </div>
+      <div class="acts">
+        <button data-act="play" ${c.recording ? "disabled" : ""}>Play</button>
+        <a class="btn" href="clips/${encodeURIComponent(c.id)}.mp4?download=1">Download</a>
+        <button data-act="keep">${c.keep ? "★ Kept" : "☆ Keep"}</button>
+        <button data-act="delete" ${c.recording ? "disabled" : ""}>Delete</button>
+      </div>
+    </div>`).join("");
+}
+$("clips").addEventListener("click", async (e) => {
+  const act = e.target.closest("[data-act]")?.dataset.act;
+  const card = e.target.closest(".clip");
+  if (!act || !card) return;
+  const id = card.dataset.id;
+  if (act === "play") {
+    if (card.querySelector('button[data-act="play"]').disabled) return;
+    $("video").src = `clips/${encodeURIComponent(id)}.mp4`;
+    $("playtitle").textContent = id;
+    $("player").showModal();
+  } else if (act === "keep") {
+    await api(`api/clips/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ keep: !card.classList.contains("kept") }) });
+    loadClips();
+  } else if (act === "delete") {
+    const btn = e.target.closest("button");
+    if (btn.dataset.confirm !== "1") { btn.dataset.confirm = "1"; btn.textContent = "Confirm delete"; btn.classList.add("primary"); return; }
+    await api(`api/clips/${encodeURIComponent(id)}`, { method: "DELETE" });
+    loadClips();
+  }
+});
+$("closeplayer").addEventListener("click", () => $("player").close());
+$("player").addEventListener("close", () => { $("video").pause(); $("video").removeAttribute("src"); $("video").load(); });
+
+// ---------------- ROI editor
+const COLORS = ["#21d19f", "#facc15", "#60a5fa", "#f472b6"];
+let rois = {}, drag = null, active = null;
+const canvas = $("roicanvas"), ctx = canvas.getContext("2d");
+function draw() {
+  const r = canvas.getBoundingClientRect();
+  canvas.width = r.width * devicePixelRatio; canvas.height = r.height * devicePixelRatio;
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+  ctx.clearRect(0, 0, r.width, r.height);
+  Object.entries(rois).forEach(([name, b], i) => {
+    const x = b.x * r.width, y = b.y * r.height, w = b.w * r.width, h = b.h * r.height;
+    ctx.strokeStyle = COLORS[i % COLORS.length]; ctx.lineWidth = name === active ? 3 : 2;
+    ctx.fillStyle = COLORS[i % COLORS.length] + "22";
+    ctx.fillRect(x, y, w, h); ctx.strokeRect(x, y, w, h);
+    ctx.fillStyle = COLORS[i % COLORS.length]; ctx.font = "600 13px system-ui"; ctx.fillText(name, x + 6, y + 16);
+    for (const [cx, cy] of [[x, y], [x + w, y], [x, y + h], [x + w, y + h]]) ctx.fillRect(cx - 5, cy - 5, 10, 10);
+  });
+}
+function hit(px, py) {
+  const r = canvas.getBoundingClientRect();
+  const names = Object.keys(rois).reverse();
+  for (const name of names) {
+    const b = rois[name], x = b.x * r.width, y = b.y * r.height, w = b.w * r.width, h = b.h * r.height;
+    const corners = { nw: [x, y], ne: [x + w, y], sw: [x, y + h], se: [x + w, y + h] };
+    for (const [k, [cx, cy]] of Object.entries(corners)) if (Math.abs(px - cx) < 10 && Math.abs(py - cy) < 10) return { name, mode: k };
+  }
+  for (const name of names) {
+    const b = rois[name];
+    if (px >= b.x * r.width && px <= (b.x + b.w) * r.width && py >= b.y * r.height && py <= (b.y + b.h) * r.height) return { name, mode: "move" };
+  }
+  return null;
+}
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+canvas.addEventListener("pointerdown", (e) => {
+  const r = canvas.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
+  const h = hit(px, py); if (!h) return;
+  active = h.name; drag = { ...h, sx: px / r.width, sy: py / r.height, orig: { ...rois[h.name] } };
+  canvas.setPointerCapture(e.pointerId); draw();
+});
+canvas.addEventListener("pointermove", (e) => {
+  if (!drag) return;
+  const r = canvas.getBoundingClientRect();
+  const fx = clamp((e.clientX - r.left) / r.width, 0, 1), fy = clamp((e.clientY - r.top) / r.height, 0, 1);
+  const o = drag.orig, b = rois[drag.name], min = 0.02;
+  if (drag.mode === "move") {
+    b.x = clamp(o.x + fx - drag.sx, 0, 1 - o.w); b.y = clamp(o.y + fy - drag.sy, 0, 1 - o.h);
+  } else {
+    let x1 = o.x, y1 = o.y, x2 = o.x + o.w, y2 = o.y + o.h;
+    if (drag.mode.includes("w")) x1 = Math.min(fx, x2 - min); else x2 = Math.max(fx, x1 + min);
+    if (drag.mode.includes("n")) y1 = Math.min(fy, y2 - min); else y2 = Math.max(fy, y1 + min);
+    Object.assign(b, { x: x1, y: y1, w: x2 - x1, h: y2 - y1 });
+  }
+  draw();
+});
+canvas.addEventListener("pointerup", () => { drag = null; });
+function setEditing(on) {
+  editing = on;
+  $("view").classList.toggle("editing", on);
+  $("editrow").hidden = !on; $("viewrow").hidden = on; $("editmsg").textContent = "";
+  if (on) {
+    rois = JSON.parse(JSON.stringify(state?.rois || {}));
+    $("stream").src = `snapshot.jpg?overlay=0&t=${Date.now()}`;
+    $("stream").onload = () => { draw(); $("stream").onload = null; };
+  } else setStream();
+}
+$("editbtn").addEventListener("click", () => setEditing(true));
+$("cancelbtn").addEventListener("click", () => setEditing(false));
+$("savebtn").addEventListener("click", async () => {
+  try {
+    const out = await api("api/rois", { method: "PUT", body: JSON.stringify(rois) });
+    if (state) state.rois = out.rois;
+    setEditing(false);
+  } catch (e) { $("editmsg").textContent = e.message; $("editmsg").className = "bad"; }
+});
+addEventListener("resize", () => editing && draw());
+
+tick(); recTick(); loadClips();
+setInterval(tick, 2000); setInterval(recTick, 1000); setInterval(loadClips, 15000);
 </script>
 </body>
 </html>

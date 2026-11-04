@@ -1,4 +1,4 @@
-"""Command line: ``wth-edge run | display | doctor | config | update``."""
+"""Command line: ``wth-edge run | display | doctor | config | update | import-dataset``."""
 
 from __future__ import annotations
 
@@ -38,11 +38,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("-v", "--verbose", action="store_true")
     parser.add_argument("--version", action="version", version=f"wth-edge {__version__}")
     sub = parser.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("run", help="run the device app (camera, telemetry, web panel)")
+    run_p = sub.add_parser("run", help="run the device app (camera, telemetry, web panel)")
+    run_p.add_argument("--source", help="replay this .mp4 instead of the camera (loops)")
+    run_p.add_argument("--port", type=int, help="web panel port")
     sub.add_parser("display", help="run the round status screen")
     sub.add_parser("doctor", help="check this Pi against its profile")
     sub.add_parser("config", help="print the merged config as JSON")
     sub.add_parser("update", help="git pull and re-run install.sh (needs sudo)")
+    imp = sub.add_parser("import-dataset", help="import the old wth-inference-training dataset as clips")
+    imp.add_argument("path", help="the dataset folder, e.g. ~/wth-inference-training/dataset")
+    imp.add_argument("--data-dir", help="clip store root (default: paths.data_dir from config)")
+    imp.add_argument("--link", action="store_true", help="symlink the videos instead of copying")
+    imp.add_argument("--dry-run", action="store_true", help="list what would be imported")
     args = parser.parse_args(argv)
     _setup_logging(args.verbose)
 
@@ -60,6 +67,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "run":
         from .app import run
 
+        if args.source:
+            cfg.camera.driver = "file"
+            cfg.camera.file_path = str(Path(args.source).expanduser().resolve())
+        if args.port:
+            cfg.web.port = args.port
         return run(cfg)
     if args.cmd == "display":
         from .display.service import run_display
@@ -69,6 +81,16 @@ def main(argv: list[str] | None = None) -> int:
         from .doctor import run_doctor
 
         return run_doctor(cfg)
+    if args.cmd == "import-dataset":
+        from .clips import ClipStore
+        from .importer import import_dataset
+
+        store = ClipStore(Path(args.data_dir).expanduser() if args.data_dir else cfg.paths.data_dir)
+        done = import_dataset(args.path, store, link=args.link, dry_run=args.dry_run)
+        for d in done:
+            print(f"{d['id']}  {d.get('source_path') or d['import']['source_path']}")
+        print(f"{'would import' if args.dry_run else 'imported'} {len(done)} clips into {store.root}")
+        return 0
     if args.cmd == "config":
         print(json.dumps(asdict(cfg), indent=2, default=str))
         return 0
