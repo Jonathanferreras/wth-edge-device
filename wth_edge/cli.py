@@ -1,4 +1,4 @@
-"""Command line: ``wth-edge run | display | play | art | doctor | config | update | import-dataset | eval``."""
+"""Command line: ``wth-edge run | display | play | art | doctor | config | update | import-dataset | eval | ais``."""
 
 from __future__ import annotations
 
@@ -67,6 +67,8 @@ def main(argv: list[str] | None = None) -> int:
     ev.add_argument("--limit", type=int, help="only the first N clips")
     ev.add_argument("--full-res", action="store_true", help="don't shrink frames to the live detector size")
     ev.add_argument("--out", help="write per-clip results to a .json or .csv file")
+    ais_p = sub.add_parser("ais", help="watch the AIS vessel feed for a while and print what it sees")
+    ais_p.add_argument("--minutes", type=float, default=2.0, help="how long to listen (default 2)")
     args = parser.parse_args(argv)
     _setup_logging(args.verbose)
 
@@ -155,6 +157,35 @@ def main(argv: list[str] | None = None) -> int:
               f"{s['direction_ok']}/{s['direction_checked']}")
         print(f"other clips:  {s['false_alarms']}/{s['other_clips']} false alarms")
         print(f"speed:        {s['ms_per_frame']} ms per detector frame on this machine")
+        return 0
+    if args.cmd == "ais":
+        import time
+
+        from .ais import AisSource
+
+        src = AisSource(cfg.ais, cfg.site.bridge_lat, cfg.site.bridge_lon)
+        if not src.configured:
+            print("set site.bridge_lat and site.bridge_lon first", file=sys.stderr)
+            return 2
+        src.start()
+        end = time.time() + args.minutes * 60
+        try:
+            while time.time() < end:
+                time.sleep(5)
+                snap = src.snapshot()
+                if snap["error"]:
+                    print(f"error: {snap['error']}", file=sys.stderr)
+                    if not snap["ok"] and "KEY" in snap["error"]:
+                        return 1
+                print(f"{time.strftime('%H:%M:%S')}  {snap['messages']} reports, {len(snap['vessels'])} vessels in range")
+                for v in snap["vessels"]:
+                    eta = f"ETA {v['eta_s'] // 60:.0f} min" if v["approaching"] else "not closing"
+                    print(f"   {v['name'] or 'MMSI ' + str(v['mmsi']):<24} {v['distance_m']:>5} m {v['side']:<4} "
+                          f"{v['sog_knots'] if v['sog_knots'] is not None else '–':>4} kn  {eta}")
+        except KeyboardInterrupt:
+            pass
+        finally:
+            src.stop()
         return 0
     if args.cmd == "config":
         print(json.dumps(asdict(cfg), indent=2, default=str))

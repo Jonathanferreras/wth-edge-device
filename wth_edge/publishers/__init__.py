@@ -25,7 +25,11 @@ class Publisher:
         raise NotImplementedError
 
     def publish_event(self, device_id: str, event: dict[str, Any]) -> None:
-        """A detector event: bridge position change, boat started / direction / ended."""
+        """A detector event: phase change, leaf position, traffic level, boat started / ended."""
+        raise NotImplementedError
+
+    def publish_bridge_state(self, device_id: str, website: dict[str, Any]) -> None:
+        """The website's ``bridgeState/current`` fields, whenever they change."""
         raise NotImplementedError
 
     def close(self) -> None:
@@ -47,6 +51,11 @@ class ConsolePublisher(Publisher):
 
     def publish_event(self, device_id: str, event: dict[str, Any]) -> None:
         log.info("event %s", json.dumps({"device_id": device_id, **event}, separators=(",", ":"), default=str))
+        self.last_publish_at = time.time()
+        self.ok = True
+
+    def publish_bridge_state(self, device_id: str, website: dict[str, Any]) -> None:
+        log.info("bridge_state %s", json.dumps({"device_id": device_id, **website}, separators=(",", ":"), default=str))
         self.last_publish_at = time.time()
         self.ok = True
 

@@ -22,7 +22,9 @@ dependencies = [
 pi = ["spidev", "gpiozero"]
 # Replaying .mp4 files (camera.driver = "file" / run --source) and recording clips off the Pi.
 replay = ["opencv-python-headless", "av>=11"]
-dev = ["pytest", "httpx", "av>=11", "opencv-python-headless"]
+# Vessel positions from aisstream.io ([ais] enabled = true). On the Pi: apt install python3-websockets.
+ais = ["websockets>=11"]
+dev = ["pytest", "httpx", "av>=11", "opencv-python-headless", "websockets>=11"]
 
 [project.scripts]
 wth-edge = "wth_edge.cli:main"

@@ -11,8 +11,13 @@
   Detector boxes, lines and ROIs are frame fractions. Thin or small things need `Frame.hires`, not the lores frame.
 - One process owns the camera. Consumers read frames from the `FrameBus`; nothing else opens the camera.
 - Detectors and telemetry hand data to a `Publisher`; they never talk to a backend directly.
+- `wth_edge/opening.py` is the opening state machine (flowing, gates_down, lifting, raised, lowering,
+  releasing, unknown). It is pure like `Pipeline`; signals go in through `Signals`, and `website()` is the
+  only place that maps a phase to the web app's fields. A boat never starts an opening on its own.
 - Bridge state follows the web app's rules: when the bridge isn't `closed`, traffic is `standstill` or
-  `unknown`; wait time only exists while `opening`, `open` or `closing`.
+  `unknown`; wait time only exists while `opening`, `open` or `closing`. Keep that in `website()`.
+- External sources (AIS today) are threads that fill a table; the detector loop reads a snapshot and hands
+  it to `Pipeline.process`, so `eval` can replay without them.
 - Pi-only imports (`picamera2`, `libcamera`, `spidev`, `gpiozero`) stay inside the driver that needs them, so
   everything else runs and tests on a laptop.
 - `install.sh` must stay idempotent and non-interactive.

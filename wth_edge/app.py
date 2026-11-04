@@ -38,13 +38,22 @@ class Device:
         self.camera.setup_recording(config.recording)
         self.recorder = Recorder(config, self.camera, self.store)
         self.detectors = None
+        self.ais = None
+        if config.ais.enabled:
+            from .ais import AisSource
+
+            self.ais = AisSource(config.ais, config.site.bridge_lat, config.site.bridge_lon)
         if config.detectors.enabled and config.camera.driver == "fake":
             log.info("detectors off: the test-pattern camera would only trigger false events")
         elif config.detectors.enabled:
             from .detectors import DetectorRunner, opencv_available
 
             if opencv_available():
-                self.detectors = DetectorRunner(config, self.bus)
+                from .opening import HISTORY_FILE, OpeningHistory
+
+                history = OpeningHistory(Path(config.paths.data_dir) / HISTORY_FILE, config.opening.history,
+                                         self._opening_defaults(config.opening))
+                self.detectors = DetectorRunner(config, self.bus, history=history, ais=self.ais)
                 self.detectors.add_listener(AutoRecorder(config.autorecord, config.detectors.log_interval_s, self.recorder))
                 self.detectors.add_listener(self._on_detections)
             else:
@@ -55,6 +64,12 @@ class Device:
         self._threads: list[threading.Thread] = []
         self.server = None  # uvicorn server, when the web panel runs
         self.exit_code = 0
+        self._last_website: dict[str, Any] | None = None
+
+    @staticmethod
+    def _opening_defaults(cfg) -> dict[str, float]:
+        return {"gates_down": cfg.default_gates_down_s, "lifting": cfg.default_lifting_s, "raised": cfg.default_raised_s,
+                "lowering": cfg.default_lowering_s, "releasing": cfg.default_releasing_s}
 
     # ---- state shared with the web panel and the display service ----
     def get_state(self) -> dict[str, Any]:
@@ -75,15 +90,30 @@ class Device:
 
     def _on_detections(self, events: list[dict[str, Any]], st: dict[str, Any]) -> None:
         with self._lock:
-            self._state["bridge"] = st["bridge"]
-            self._state["boat"] = st["boat"]
-            self._state["detector"] = st["detector"]
+            for key in ("bridge", "far_leaf", "traffic", "deck", "opening", "boat", "detector", "ais"):
+                if key in st:
+                    self._state[key] = st[key]
         for e in events:
             try:
                 self.publisher.publish_event(self.config.device.id, e)
             except Exception:
                 self.publisher.ok = False
                 log.exception("publisher %s failed", self.publisher.name)
+        website = (st.get("opening") or {}).get("website")
+        if website is not None:
+            # Publish the website fields when they change, with the wait time rounded so a
+            # countdown doesn't publish every second.
+            key = {k: (round(v, 1) if isinstance(v, float) else v) for k, v in website.items()}
+            if key.get("estimatedWaitTime"):
+                key["estimatedWaitTime"] = {k: v for k, v in key["estimatedWaitTime"].items()
+                                            if k not in ("estimatedTotalMinutes", "remainingMinutes")}
+            if key != self._last_website:
+                self._last_website = key
+                try:
+                    self.publisher.publish_bridge_state(self.config.device.id, website)
+                except Exception:
+                    self.publisher.ok = False
+                    log.exception("publisher %s failed", self.publisher.name)
 
     # ---- loops ----
     def _state_loop(self) -> None:
@@ -97,8 +127,11 @@ class Device:
                     self.server.should_exit = True
                 break
             health = self.camera.health()
+            ais = self.ais.snapshot() if self.ais is not None and self.detectors is None else None
             with self._lock:
                 self._state["camera"] = health.as_dict()
+                if ais is not None:
+                    self._state["ais"] = ais
                 self._state["publisher"] = self.publisher.status()
                 rec = self.recorder.status()
                 self._state["recording"] = {k: rec[k] for k in ("available", "recording", "label", "elapsed_s", "trigger")}
@@ -153,6 +186,8 @@ class Device:
         except OSError as exc:
             log.warning("cannot create data dir %s: %s", self.config.paths.data_dir, exc)
         self.camera.start()
+        if self.ais is not None:
+            self.ais.start()
         if self.detectors is not None:
             self.detectors.start()
         self._spawn(self._state_loop, "state")
@@ -168,6 +203,8 @@ class Device:
         except Exception:
             log.exception("could not finish the clip being recorded")
         self.camera.stop()
+        if self.ais is not None:
+            self.ais.stop()
         for t in self._threads:
             t.join(timeout=3)
         self.publisher.close()

@@ -96,18 +96,28 @@ def render(
         return img
 
     bridge = state.get("bridge", {}) or {}
-    position = str(bridge.get("position", "unknown")).upper()
+    opening = state.get("opening") or {}
+    # With the state machine, the big word is the website's position and the small line the phase.
+    position = str(opening.get("position") or bridge.get("position", "unknown")).upper()
     _centered(d, 104, position, 32, WHITE, bold=True, max_w=190)
-    conf = bridge.get("confidence")
+    conf = opening.get("confidence") if opening else bridge.get("confidence")
     boat = state.get("boat") or {}
+    ais = (state.get("ais") or {}).get("approaching")
+    wait = opening.get("wait") or {}
     if boat.get("present"):
         code = (boat.get("direction") or "").upper()
         sub, colour = (f"BOAT {code[0]}→{code[-1]}" if len(code) == 3 else "BOAT"), AMBER
+    elif wait.get("remainingMinutes") is not None:
+        sub, colour = f"{opening['phase'].replace('_', ' ')} · {wait['remainingMinutes']:.0f} min", AMBER
+    elif ais and ais.get("eta_s") is not None:
+        sub, colour = f"BOAT {ais['side'][0].upper()} · {ais['eta_s'] // 60:.0f} min", AMBER
     elif position == "UNKNOWN":
         sub, colour = ("no detector" if not state.get("detector") else "can't see bridge"), GREY
+    elif opening:
+        sub, colour = f"{opening['phase'].replace('_', ' ')} · {round((conf or 0) * 100)}%", GREY
     else:
         sub, colour = f"bridge · {round((conf or 0) * 100)}%", GREY
-    _centered(d, 134, sub, 13 if boat.get("present") else 12, colour, bold=bool(boat.get("present")))
+    _centered(d, 134, sub, 13 if colour == AMBER else 12, colour, bold=colour == AMBER, max_w=190)
 
     cam = state.get("camera", {}) or {}
     if cam.get("ok"):

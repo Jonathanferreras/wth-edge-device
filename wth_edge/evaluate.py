@@ -11,6 +11,7 @@ The score is deliberately simple:
 * boat clips: did at least one crossing start (recall), and was its direction right?
 * other clips: any crossing is a false alarm.
 * bridge: which positions were seen and the angle range, to set the thresholds.
+* opening: the phases the state machine went through, and the traffic levels per lane.
 """
 
 from __future__ import annotations
@@ -67,6 +68,8 @@ def evaluate_clip(config, video: Path, meta: dict[str, Any], rois: dict, size) -
     pipe = Pipeline(config, rois)
     events: list[dict[str, Any]] = []
     positions: list[str] = []
+    phases: list[str] = []
+    levels: dict[str, list[str]] = {}
     angles: list[float] = []
     n, t_end, t0 = 0, 0.0, time.perf_counter()
     for t, img, grey in _frames(video, config.detectors.fps, size, config.camera.detector_hires):
@@ -77,6 +80,12 @@ def evaluate_clip(config, video: Path, meta: dict[str, Any], rois: dict, size) -
             angles.append(st["bridge"]["angle_deg"])
         if not positions or positions[-1] != st["bridge"]["position"]:
             positions.append(st["bridge"]["position"])
+        if st.get("opening") and (not phases or phases[-1] != st["opening"]["phase"]):
+            phases.append(st["opening"]["phase"])
+        for name, lane in (st.get("traffic") or {}).items():
+            seen = levels.setdefault(name, [])
+            if not seen or seen[-1] != lane["level"]:
+                seen.append(lane["level"])
         n, t_end = n + 1, t
     # Close an open crossing at the end of the clip.
     if pipe.boats is not None:
@@ -101,6 +110,8 @@ def evaluate_clip(config, video: Path, meta: dict[str, Any], rois: dict, size) -
         "direction_ok": (expected_dir in got_dirs) if expected_dir and got_dirs else None,
         "best_confidence": max((e.get("confidence") or 0 for e in ends), default=0.0),
         "bridge_positions": positions,
+        "phases": phases,
+        "traffic": levels,
         "angle_min": round(min(angles), 1) if angles else None,
         "angle_max": round(max(angles), 1) if angles else None,
         "angle_found": round(len(angles) / max(n, 1), 2),
@@ -157,6 +168,8 @@ def run_eval(config, path: str | Path, site: str | None = None, limit: int | Non
             flag = "FALSE-ALARM"
         print(f"[{i}/{len(metas)}] {row['label']:<7} {flag:<18} crossings={row['crossings']} dirs={row['directions']} "
               f"expected={row['expected_direction']} bridge={'>'.join(row['bridge_positions'])} "
+              f"phases={'>'.join(row['phases'])} "
+              f"nb={'>'.join(row['traffic'].get('northbound', []))} sb={'>'.join(row['traffic'].get('southbound', []))} "
               f"angle={row['angle_min']}..{row['angle_max']} {row['ms_per_frame']} ms/f  {row['source']}", flush=True)
     summary = summarize(rows)
     if out:
