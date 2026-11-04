@@ -1,8 +1,8 @@
 """``wth-edge run``: the main device process.
 
 Owns the camera, keeps the shared state file fresh for the display service, collects
-telemetry, hands it to the publisher, and serves the local web panel. Detectors and the
-recorder plug in here in later phases, reading frames from the same FrameBus.
+telemetry, hands it to the publisher, records clips, and serves the local web panel.
+Detectors plug in here in phase 3, reading frames from the same FrameBus.
 """
 
 from __future__ import annotations
@@ -17,7 +17,9 @@ from typing import Any
 
 from . import __version__, telemetry
 from .camera import FrameBus, make_camera
+from .clips import ClipStore
 from .publishers import make_publisher
+from .recording import Recorder
 from .state import new_state, write_state
 
 log = logging.getLogger(__name__)
@@ -31,6 +33,9 @@ class Device:
         self.bus = FrameBus()
         self.camera = make_camera(config.camera, self.bus)
         self.publisher = make_publisher(config.publisher)
+        self.store = ClipStore(config.paths.data_dir)
+        self.camera.setup_recording(config.recording)
+        self.recorder = Recorder(config, self.camera, self.store)
         self.stop_event = threading.Event()
         self._lock = threading.Lock()
         self._state = new_state(config.device.id, __version__)
@@ -70,6 +75,8 @@ class Device:
             with self._lock:
                 self._state["camera"] = health.as_dict()
                 self._state["publisher"] = self.publisher.status()
+                rec = self.recorder.status()
+                self._state["recording"] = {k: rec[k] for k in ("available", "recording", "label", "elapsed_s")}
                 self._state["status"] = self._status(health.ok, self._state["telemetry"])
                 self._state["updated_at"] = time.time()
                 snapshot = copy.deepcopy(self._state)
@@ -101,6 +108,14 @@ class Device:
                 log.exception("telemetry failed")
             self.stop_event.wait(min(tcfg.interval_s, pcfg.interval_s))
 
+    def _housekeeping_loop(self) -> None:
+        while not self.stop_event.is_set():
+            try:
+                self.store.prune(self.config.recording.min_free_percent, active_id=self.recorder.status()["clip_id"])
+            except Exception:
+                log.exception("clip cleanup failed")
+            self.stop_event.wait(300)
+
     def _spawn(self, target, name: str) -> None:
         t = threading.Thread(target=target, name=name, daemon=True)
         t.start()
@@ -115,9 +130,14 @@ class Device:
         self.camera.start()
         self._spawn(self._state_loop, "state")
         self._spawn(self._telemetry_loop, "telemetry")
+        self._spawn(self._housekeeping_loop, "housekeeping")
 
     def stop(self) -> None:
         self.stop_event.set()
+        try:
+            self.recorder.close()
+        except Exception:
+            log.exception("could not finish the clip being recorded")
         self.camera.stop()
         for t in self._threads:
             t.join(timeout=3)
@@ -134,7 +154,7 @@ def run(config) -> int:
 
             from .web.app import create_app
 
-            app = create_app(config, device.bus, device.get_state)
+            app = create_app(config, device.bus, device.get_state, recorder=device.recorder, store=device.store)
             server = device.server = uvicorn.Server(
                 uvicorn.Config(app, host=config.web.host, port=config.web.port, log_level="warning",
                                timeout_graceful_shutdown=2, access_log=False)

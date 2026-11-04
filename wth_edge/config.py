@@ -101,6 +101,20 @@ class PublisherSection:
 
 
 @dataclass
+class RecordingSection:
+    enabled: bool = True
+    # Seconds of video kept in memory, so a clip includes what happened before "start".
+    prebuffer_s: float = 15.0
+    # A clip stops itself after this long, even if nobody presses stop.
+    max_duration_s: float = 600.0
+    # H.264 bitrate for the main stream (Pi). 4 Mbit/s at 720p is about 30 MB a minute.
+    bitrate: int = 4_000_000
+    # Delete the oldest clips not marked "keep" when free disk drops below this.
+    min_free_percent: float = 20.0
+    labels: tuple[str, ...] = ("boat", "bridge", "traffic", "other")
+
+
+@dataclass
 class UiSection:
     # How the screen and web panel show temperatures: "F" or "C".
     # Telemetry data itself always stays in Celsius (cpu_temp_c).
@@ -149,6 +163,7 @@ class Config:
     publisher: PublisherSection = field(default_factory=PublisherSection)
     paths: PathsSection = field(default_factory=PathsSection)
     ui: UiSection = field(default_factory=UiSection)
+    recording: RecordingSection = field(default_factory=RecordingSection)
     site: SiteSection = field(default_factory=SiteSection)
     # Files that were merged, in order, for `wth-edge doctor` and logs.
     sources: list[str] = field(default_factory=list)
@@ -258,7 +273,37 @@ def load(device_file: Path | str | None = None) -> Config:
         value = getattr(obj, attr)
         if value and not Path(value).is_absolute():
             setattr(obj, attr, str((base / value).resolve()))
+
+    # Last layer: ROIs adjusted in the web panel, saved where the service may write.
+    overrides = roi_override_path(cfg)
+    if overrides.is_file():
+        try:
+            for name, roi in _read_toml(overrides).get("rois", {}).items():
+                cfg.site.rois[name] = _build(Roi, roi, f"rois.{name}")
+            cfg.sources.append(str(overrides))
+        except ConfigError as exc:
+            log.error("ignoring %s: %s", overrides, exc)
     return cfg
+
+
+ROI_OVERRIDE_FILE = "rois.toml"
+
+
+def roi_override_path(cfg: Config) -> Path:
+    return Path(cfg.paths.data_dir) / ROI_OVERRIDE_FILE
+
+
+def save_roi_overrides(cfg: Config, rois: dict[str, Roi]) -> Path:
+    """Write ROIs edited in the web panel. They win over the site file until deleted."""
+    path = roi_override_path(cfg)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = ["# Written by the wth-edge web panel. Delete this file to go back to the site file.", ""]
+    for name, roi in sorted(rois.items()):
+        lines += [f"[rois.{name}]", f"x = {roi.x:.4f}", f"y = {roi.y:.4f}", f"w = {roi.w:.4f}", f"h = {roi.h:.4f}", ""]
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text("\n".join(lines))
+    os.replace(tmp, path)
+    return path
 
 
 def from_dict(data: dict[str, Any]) -> Config:

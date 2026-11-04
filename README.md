@@ -32,7 +32,7 @@ and data too).
 
 | Unit | Command | Does |
 | --- | --- | --- |
-| `wth-edge.service` | `wth-edge run` | Owns the camera (Picamera2), collects telemetry, writes `/run/wth/state.json`, serves the web panel on port 8080, hands data to the publisher. |
+| `wth-edge.service` | `wth-edge run` | Owns the camera (Picamera2), records clips, collects telemetry, writes `/run/wth/state.json`, serves the web panel on port 8080, hands data to the publisher. |
 | `wth-display.service` | `wth-edge display` | Redraws the round GC9A01 screen from `state.json` every second. Separate on purpose: it shows **OFFLINE** when the main app is down. |
 
 Useful commands on the Pi:
@@ -47,7 +47,8 @@ wth-edge config                 # the merged config as JSON
 ## Configuration
 
 Layers, later ones win: code defaults → `profiles/<profile>.toml` → `sites/<site>.toml` →
-`/etc/wth/device.toml`.
+`/etc/wth/device.toml` → `/var/lib/wth/rois.toml` (boxes saved from the web panel; delete it
+to go back to the site file).
 
 | File | Holds | In git |
 | --- | --- | --- |
@@ -62,6 +63,39 @@ Profiles today:
 - `pi3-cam2-headless`: the original Pi 3 with no screen (greyscale preview).
 - `dev`: a laptop, with a synthetic camera and the screen written to a PNG.
 
+## Recording clips
+
+The web panel has a **Recording** card: pick a label, add a note, press Start. Each clip
+begins up to 15 s *before* you press Start (a pre-roll buffer) and stops itself after 10
+minutes. Clips land in `/var/lib/wth/clips/YYYY-MM-DD/` as three files:
+
+| File | Holds |
+| --- | --- |
+| `<id>.mp4` | 1280x720 H.264 from the main stream (Pi 5 encodes in software with libav) |
+| `<id>.json` | When, why (`trigger`), label, note, keep flag, camera, the ROIs at the time, and (from phase 3) a per-frame detection log for draft labels |
+| `<id>.jpg` | Thumbnail for the clip browser |
+
+The **Clips** section plays, downloads, keeps (★) and deletes clips. When free disk drops
+below 20%, the oldest clips that aren't kept are deleted. Settings live in `[recording]`
+(`prebuffer_s`, `max_duration_s`, `bitrate`, `min_free_percent`, `labels`).
+
+**Adjust boxes** in the live view lets you drag the bridge and boat boxes (move or resize
+from a corner) and saves them to `rois.toml` on the Pi.
+
+### Import the old dataset
+
+The clips from `wth-inference-training/dataset` can be brought into the same layout, so
+training code reads one format. Folder names become metadata (label from the top folder,
+`e2w`/`w2e` direction, `bad_footage`, and `boat_details.json`). Imported clips are marked
+keep. It is safe to run again.
+
+```sh
+wth-edge --config dev/device.toml import-dataset ~/wth-inference-training/dataset --data-dir ~/wth-clips --dry-run
+wth-edge --config dev/device.toml import-dataset ~/wth-inference-training/dataset --data-dir ~/wth-clips --link
+```
+
+`--link` symlinks instead of copying the 8 GB of video.
+
 ## Develop on a laptop
 
 ```sh
@@ -72,20 +106,21 @@ wth-edge --config dev/device.toml display   # screen frames go to dev/display.pn
 pytest
 ```
 
-To replay a recorded clip instead of the test pattern, `pip install -e '.[replay]'` and set
-in `dev/device.toml`:
+To replay a recorded clip instead of the test pattern (it loops):
 
-```toml
-[camera]
-driver = "file"
-file_path = "/path/to/clip.mp4"
+```sh
+pip install -e '.[replay]'
+wth-edge --config dev/device.toml run --source ~/wth-clips/clips/2026-04-03/<id>.mp4
 ```
+
+Or set `driver = "file"` and `file_path` under `[camera]` in `dev/device.toml`. Recording
+works on a laptop too: it encodes the 640x360 preview frames with PyAV.
 
 ## Status
 
-Done in this step: install script, profiles, camera service with health checks, status
-screen, telemetry (Celsius, Pi 5 input voltage, throttle flags), a console publisher, and a
-first web panel (live view with ROIs, telemetry).
+Done: install script, profiles, camera service with health checks, status screen,
+telemetry, a console publisher, the web panel (live view, telemetry), manual recording with
+pre-roll, the clip browser, drag-to-adjust ROIs, dataset import and replay.
 
-Next, per the plan: recording (manual and pre-roll), clip browser, detectors (bridge angle,
-boat YOLO), the Firestore publisher, and H.264 streaming through MediaMTX.
+Next, per the plan: detectors (bridge angle, boat YOLO) that also start recordings on their
+own, the Firestore publisher, and H.264 streaming through MediaMTX.

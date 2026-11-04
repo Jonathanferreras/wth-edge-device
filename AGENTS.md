@@ -3,6 +3,9 @@
 - Python 3.11+ (Raspberry Pi OS Bookworm ships 3.11). Package: `wth_edge/`. Entry point: `wth-edge`.
 - Hardware differences go in `profiles/*.toml`, window calibration in `sites/*.toml`. Never hardcode pins,
   resolutions or pixel ROIs in code. ROIs are fractions of the frame.
+- ROIs edited in the web panel are saved to `<data_dir>/rois.toml`, which overrides the site file.
+- Recording goes through `Recorder` and the camera's `clip_writer` (`begin(path)` / `end()`); every clip gets
+  a `clip.json` sidecar in the `ClipStore` layout. Imported and detector-triggered clips use the same format.
 - One process owns the camera. Consumers read frames from the `FrameBus`; nothing else opens the camera.
 - Detectors and telemetry hand data to a `Publisher`; they never talk to a backend directly.
 - Bridge state follows the web app's rules: when the bridge isn't `closed`, traffic is `standstill` or

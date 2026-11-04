@@ -79,6 +79,13 @@ def render(
 
     _centered(d, 40, "WATCH THE HUTCH", 13, COPPER, bold=True, max_w=150)
     _centered(d, 60, time.strftime("%H:%M", time.localtime(now)), 15, GREY)
+    rec = (state or {}).get("recording") or {}
+    if rec.get("recording") and status not in ("waiting", "offline"):
+        # Blinks once a second so it reads as "live".
+        if int(now) % 2 == 0:
+            d.ellipse((W // 2 - 46, 72, W // 2 - 36, 82), fill=RED)
+        el = rec.get("elapsed_s") or 0
+        _centered(d, 77, f"REC {int(el // 60)}:{int(el % 60):02d}", 13, RED, bold=True)
 
     if status in ("waiting", "offline"):
         _centered(d, 112, "OFFLINE" if status == "offline" else "WAITING", 30, RED if status == "offline" else WHITE, bold=True)

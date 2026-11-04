@@ -20,9 +20,9 @@ dependencies = [
 [project.optional-dependencies]
 # On the Pi these come from apt: python3-picamera2, python3-spidev, python3-gpiozero, python3-lgpio.
 pi = ["spidev", "gpiozero"]
-# Replaying recorded .mp4 files on a laptop (camera.driver = "file").
-replay = ["opencv-python-headless"]
-dev = ["pytest", "httpx"]
+# Replaying .mp4 files (camera.driver = "file" / run --source) and recording clips off the Pi.
+replay = ["opencv-python-headless", "av>=11"]
+dev = ["pytest", "httpx", "av>=11", "opencv-python-headless"]
 
 [project.scripts]
 wth-edge = "wth_edge.cli:main"
