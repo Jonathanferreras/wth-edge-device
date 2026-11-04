@@ -33,7 +33,7 @@ and data too).
 | Unit | Command | Does |
 | --- | --- | --- |
 | `wth-edge.service` | `wth-edge run` | Owns the camera (Picamera2), records clips, collects telemetry, writes `/run/wth/state.json`, serves the web panel on port 8080, hands data to the publisher. |
-| `wth-display.service` | `wth-edge display` | Redraws the round GC9A01 screen from `state.json` every second. Separate on purpose: it shows **OFFLINE** when the main app is down. |
+| `wth-display.service` | `wth-edge display` | Plays the boot animation, then redraws the round GC9A01 screen from `state.json` every second. Separate on purpose: it shows **OFFLINE** when the main app is down. |
 
 Useful commands on the Pi:
 
@@ -157,6 +157,31 @@ wth-edge --config dev/device.toml run --source ~/wth-clips/clips/2026-04-03/<id>
 
 Or set `driver = "file"` and `file_path` under `[camera]` in `dev/device.toml`. Recording
 works on a laptop too: it encodes the 640x360 preview frames with PyAV.
+
+## Pixel art on the round screen
+
+Retro pixel art lives in `wth_edge/display/art/`: a small drawing kit (`kit.py`: a 20 colour
+palette, ASCII sprites, a 3x5 pixel font, Bayer dithering, the round mask), the scenes drawn
+with it (`scenes.py`), and a player (`player.py`). Scenes are drawn on an 80x80 canvas and
+scaled 3x to the 240x240 panel. The built GIFs in `wth_edge/display/art/gifs/` are both the
+previews and what the Pi plays.
+
+| boot | idle | alert | sleep |
+| --- | --- | --- | --- |
+| ![boot](wth_edge/display/art/gifs/boot.gif) | ![idle](wth_edge/display/art/gifs/idle.gif) | ![alert](wth_edge/display/art/gifs/alert.gif) | ![sleep](wth_edge/display/art/gifs/sleep.gif) |
+
+```sh
+wth-edge art list                       # bundled animations
+wth-edge art build [idle ...]           # redraw the GIFs after editing scenes.py
+sudo systemctl stop wth-display         # the player and the status screen share the SPI bus
+wth-edge play idle --seconds 30         # any bundled name, a .gif, or a folder of PNG frames
+sudo systemctl start wth-display
+```
+
+`wth-display.service` plays `display.boot_animation` (default `boot`, `""` for none) once
+when it starts, then shows the status screen. Any GIF works with `wth-edge play`, including
+ones drawn in Aseprite at 80x80 or 120x120: smaller frames are scaled up with nearest
+neighbour. On a laptop, `play` writes frames to `dev/display.png`.
 
 ## Status
 

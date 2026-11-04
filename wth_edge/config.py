@@ -80,6 +80,9 @@ class DisplaySection:
     refresh_s: float = 1.0
     # The screen shows "offline" when state.json is older than this.
     stale_after_s: float = 15.0
+    # Pixel art played once when the screen service starts: a bundled name
+    # (`wth-edge art list`), a .gif path, or "" for none.
+    boot_animation: str = "boot"
 
 
 @dataclass

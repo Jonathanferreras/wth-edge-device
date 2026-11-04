@@ -42,6 +42,14 @@ def run_display(config, stop: threading.Event | None = None) -> int:
         for sig in (signal.SIGTERM, signal.SIGINT):
             signal.signal(sig, lambda *_: stop.set())
 
+    if dcfg.boot_animation:
+        try:
+            from .art.player import load, play
+
+            play(dev, load(dcfg.boot_animation), loops=1, seconds=10, stop=stop)
+        except Exception as exc:  # a broken GIF must never keep the status screen from starting
+            log.warning("boot animation %r failed: %s", dcfg.boot_animation, exc)
+
     log.info("display %s refreshing every %.1fs from %s", dcfg.driver, dcfg.refresh_s, config.paths.state_file)
     last = None
     try:
