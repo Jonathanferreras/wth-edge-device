@@ -1,8 +1,8 @@
 """``wth-edge run``: the main device process.
 
 Owns the camera, keeps the shared state file fresh for the display service, collects
-telemetry, hands it to the publisher, records clips, and serves the local web panel.
-Detectors plug in here in phase 3, reading frames from the same FrameBus.
+telemetry, runs the detectors on the same FrameBus, records clips (by hand or when the
+detectors see something), hands data to the publisher, and serves the local web panel.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__, telemetry
+from .autorecord import AutoRecorder
 from .camera import FrameBus, make_camera
 from .clips import ClipStore
 from .publishers import make_publisher
@@ -36,6 +37,18 @@ class Device:
         self.store = ClipStore(config.paths.data_dir)
         self.camera.setup_recording(config.recording)
         self.recorder = Recorder(config, self.camera, self.store)
+        self.detectors = None
+        if config.detectors.enabled and config.camera.driver == "fake":
+            log.info("detectors off: the test-pattern camera would only trigger false events")
+        elif config.detectors.enabled:
+            from .detectors import DetectorRunner, opencv_available
+
+            if opencv_available():
+                self.detectors = DetectorRunner(config, self.bus)
+                self.detectors.add_listener(AutoRecorder(config.autorecord, config.detectors.log_interval_s, self.recorder))
+                self.detectors.add_listener(self._on_detections)
+            else:
+                log.warning("detectors disabled: OpenCV not installed (apt install python3-opencv)")
         self.stop_event = threading.Event()
         self._lock = threading.Lock()
         self._state = new_state(config.device.id, __version__)
@@ -60,6 +73,18 @@ class Device:
             return "degraded"
         return "ok"
 
+    def _on_detections(self, events: list[dict[str, Any]], st: dict[str, Any]) -> None:
+        with self._lock:
+            self._state["bridge"] = st["bridge"]
+            self._state["boat"] = st["boat"]
+            self._state["detector"] = st["detector"]
+        for e in events:
+            try:
+                self.publisher.publish_event(self.config.device.id, e)
+            except Exception:
+                self.publisher.ok = False
+                log.exception("publisher %s failed", self.publisher.name)
+
     # ---- loops ----
     def _state_loop(self) -> None:
         path = self.config.paths.state_file
@@ -76,7 +101,7 @@ class Device:
                 self._state["camera"] = health.as_dict()
                 self._state["publisher"] = self.publisher.status()
                 rec = self.recorder.status()
-                self._state["recording"] = {k: rec[k] for k in ("available", "recording", "label", "elapsed_s")}
+                self._state["recording"] = {k: rec[k] for k in ("available", "recording", "label", "elapsed_s", "trigger")}
                 self._state["status"] = self._status(health.ok, self._state["telemetry"])
                 self._state["updated_at"] = time.time()
                 snapshot = copy.deepcopy(self._state)
@@ -128,12 +153,16 @@ class Device:
         except OSError as exc:
             log.warning("cannot create data dir %s: %s", self.config.paths.data_dir, exc)
         self.camera.start()
+        if self.detectors is not None:
+            self.detectors.start()
         self._spawn(self._state_loop, "state")
         self._spawn(self._telemetry_loop, "telemetry")
         self._spawn(self._housekeeping_loop, "housekeeping")
 
     def stop(self) -> None:
         self.stop_event.set()
+        if self.detectors is not None:
+            self.detectors.stop()  # first, so nothing starts a new clip during shutdown
         try:
             self.recorder.close()
         except Exception:
@@ -160,7 +189,12 @@ def run(config) -> int:
                                timeout_graceful_shutdown=2, access_log=False)
             )
             log.info("web panel on http://%s:%d", config.web.host, config.web.port)
-            server.run()  # handles SIGINT / SIGTERM itself
+            # uvicorn handles SIGINT / SIGTERM, then re-raises the signal once it has shut
+            # down. With the default handler that kills the process before device.stop()
+            # runs (and the clip being recorded is never finished), so give it a harmless one.
+            for sig in (signal.SIGTERM, signal.SIGINT):
+                signal.signal(sig, lambda *_: device.stop_event.set())
+            server.run()
         else:
             for sig in (signal.SIGTERM, signal.SIGINT):
                 signal.signal(sig, lambda *_: device.stop_event.set())

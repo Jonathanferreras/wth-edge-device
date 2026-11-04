@@ -6,7 +6,7 @@ import time
 
 import numpy as np
 
-from .base import Camera
+from .base import Camera, HiRes
 
 
 class FakeCamera(Camera):
@@ -63,7 +63,8 @@ class FileCamera(Camera):
                     cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                     continue
                 rgb = cv2.cvtColor(cv2.resize(bgr, (w, h), interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2RGB)
-                self.bus.publish(rgb)
+                hires = HiRes(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB), "rgb", (bgr.shape[1], bgr.shape[0])) if self.cfg.detector_hires else None
+                self.bus.publish(rgb, hires=hires)
                 self._stop.wait(max(0.0, period - (time.time() - t0)))
         finally:
             cap.release()

@@ -101,6 +101,10 @@
       <h2>Bridge</h2>
       <div class="big" id="bridge">unknown</div>
       <div class="note" id="bridgenote">No detector running yet.</div>
+      <h2 style="margin-top:14px">Boat</h2>
+      <div class="big" id="boat" style="font-size:20px">none</div>
+      <div class="note" id="boatnote"></div>
+      <div class="note" id="detnote"></div>
     </section>
     <section>
       <h2>Telemetry</h2>
@@ -155,7 +159,17 @@ async function tick() {
       : `<span class="bad">Camera down</span> · ${esc(cam.error)}`;
     const b = s.bridge || {};
     $("bridge").textContent = b.position || "unknown";
-    $("bridgenote").textContent = b.position && b.position !== "unknown" ? `${Math.round((b.confidence || 0) * 100)}% confidence` : "No detector running yet.";
+    const det = s.detector;
+    const ago = (ts) => ts ? `${fmt.dur(Date.now() / 1000 - ts)} ago` : "";
+    $("bridgenote").textContent = !det ? "Detectors are off." : b.position && b.position !== "unknown"
+      ? `${b.angle_deg ?? "–"}° · ${Math.round((b.confidence || 0) * 100)}% of frames · since ${ago(b.since)}`
+      : b.angle_deg != null ? `${b.angle_deg}°` : "Can't see the bridge edge.";
+    const boat = s.boat || {};
+    $("boat").textContent = boat.present ? `crossing${boat.direction ? " · " + boat.direction.toUpperCase() : ""}` : "none";
+    $("boat").className = `big ${boat.present ? "warn" : ""}`;
+    $("boatnote").textContent = boat.present ? `${Math.round((boat.confidence || 0) * 100)}% · started ${ago(boat.since)}` : "";
+    $("detnote").textContent = !det ? "" : det.error ? `Detector error: ${det.error}`
+      : `Detectors ${det.ms_per_frame} ms/frame${det.yolo ? ` · YOLO ${det.yolo_ms ?? "–"} ms` : " · motion only" + (det.yolo_error ? ` (${det.yolo_error})` : "")}`;
     const t = s.telemetry || {}, thr = t.throttled || {};
     const rows = [
       ["CPU temp", fmt.temp(t.cpu_temp_c, s.temperature_unit), t.cpu_temp_c > 75 ? "warn" : ""],
@@ -192,7 +206,7 @@ async function recTick() {
   $("recbtn").textContent = on ? "Stop recording" : "Start recording";
   $("recbtn").className = on ? "go" : "primary";
   $("recpill").hidden = !on;
-  $("recline").textContent = on ? `Recording ${fmt.dur(rec.elapsed_s)}${rec.label ? " · " + rec.label : ""}` : "";
+  $("recline").textContent = on ? `Recording ${fmt.dur(rec.elapsed_s)}${rec.label ? " · " + rec.label : ""}${rec.trigger && rec.trigger !== "manual" ? " (auto)" : ""}` : "";
   $("recnote").textContent = !rec ? "" : !rec.available
     ? "Recording is unavailable with this camera."
     : `Each clip starts ${rec.prebuffer_s} s before you press start and stops itself after ${Math.round(rec.max_duration_s / 60)} min.`;

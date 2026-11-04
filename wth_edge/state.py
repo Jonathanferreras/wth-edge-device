@@ -27,11 +27,13 @@ def new_state(device_id: str, version: str) -> dict[str, Any]:
         # "starting" | "ok" | "degraded"
         "status": "starting",
         "camera": {"ok": False, "fps": 0.0, "frame_age_s": None, "error": None},
-        # Filled by detectors in a later phase; "unknown" until then.
-        "bridge": {"position": "unknown", "confidence": 0.0},
+        # Filled by the detectors; "unknown" until they have seen enough.
+        "bridge": {"position": "unknown", "confidence": 0.0, "angle_deg": None, "since": None, "line": None},
+        "boat": {"present": False, "direction": None, "confidence": 0.0, "since": None, "box": None},
+        "detector": None,
         "telemetry": {},
         "publisher": {"driver": None, "ok": None, "last_publish_at": None},
-        "recording": {"available": False, "recording": False, "label": None, "elapsed_s": None},
+        "recording": {"available": False, "recording": False, "label": None, "elapsed_s": None, "trigger": None},
         "web_url": None,
     }
 

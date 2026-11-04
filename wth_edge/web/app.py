@@ -27,19 +27,33 @@ from ..config import Roi, save_roi_overrides
 from ..recording import RecordingError
 
 BOUNDARY = "wthframe"
+DETECT_COLOUR = (239, 68, 68)
 ROI_COLOURS = [(33, 209, 159), (250, 204, 21), (96, 165, 250), (244, 114, 182)]
 
 
-def encode_jpeg(image, quality: int, rois: dict | None = None) -> bytes:
+def encode_jpeg(image, quality: int, rois: dict | None = None, det: dict | None = None) -> bytes:
+    """JPEG of a frame; with ``rois`` draws the boxes, with ``det`` what the detectors see."""
     img = Image.fromarray(image)
-    if rois:
+    if rois or det:
         img = img.convert("RGB")
         d = ImageDraw.Draw(img)
-        for i, (name, roi) in enumerate(rois.items()):
-            box = roi.to_pixels(img.width, img.height)
+        W, H = img.width, img.height
+        for i, (name, roi) in enumerate((rois or {}).items()):
+            box = roi.to_pixels(W, H)
             colour = ROI_COLOURS[i % len(ROI_COLOURS)]
             d.rectangle(box, outline=colour, width=2)
             d.text((box[0] + 4, box[1] + 2), name, fill=colour)
+        if det:
+            bridge, boat = det.get("bridge") or {}, det.get("boat") or {}
+            if line := bridge.get("line"):
+                d.line((line[0] * W, line[1] * H, line[2] * W, line[3] * H), fill=DETECT_COLOUR, width=3)
+                if bridge.get("angle_deg") is not None:
+                    d.text((line[0] * W, line[1] * H - 12), f"{bridge['angle_deg']:.0f}° {bridge.get('position', '')}", fill=DETECT_COLOUR)
+            if box := boat.get("box"):
+                px = (box[0] * W, box[1] * H, box[2] * W, box[3] * H)
+                d.rectangle(px, outline=DETECT_COLOUR, width=3)
+                label = f"boat {boat.get('confidence', 0):.2f}" + (f" {boat['direction']}" if boat.get("direction") else "")
+                d.text((px[0] + 3, max(0, px[1] - 12)), label, fill=DETECT_COLOUR)
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=quality)
     return buf.getvalue()
@@ -84,7 +98,8 @@ def create_app(config, bus: FrameBus, get_state: Callable[[], dict[str, Any]], r
         frame = bus.latest()
         if frame is None:
             raise HTTPException(503, "no camera frame yet")
-        return Response(encode_jpeg(frame.image, wcfg.jpeg_quality, rois if overlay else None), media_type="image/jpeg")
+        return Response(encode_jpeg(frame.image, wcfg.jpeg_quality, rois if overlay else None,
+                                    get_state() if overlay else None), media_type="image/jpeg")
 
     @app.get("/stream.mjpg", dependencies=[Depends(auth)])
     async def stream(request: Request, overlay: int = 1) -> StreamingResponse:
@@ -97,7 +112,8 @@ def create_app(config, bus: FrameBus, get_state: Callable[[], dict[str, Any]], r
                 frame = bus.latest()
                 if frame is not None and frame.seq != last_seq:
                     last_seq = frame.seq
-                    jpg = await asyncio.to_thread(encode_jpeg, frame.image, wcfg.jpeg_quality, rois if overlay else None)
+                    jpg = await asyncio.to_thread(encode_jpeg, frame.image, wcfg.jpeg_quality,
+                                                  rois if overlay else None, get_state() if overlay else None)
                     yield (
                         f"--{BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: {len(jpg)}\r\n\r\n".encode()
                         + jpg
@@ -130,7 +146,7 @@ def create_app(config, bus: FrameBus, get_state: Callable[[], dict[str, Any]], r
 
     @app.post("/api/recording/stop", dependencies=[Depends(auth)])
     def recording_stop() -> dict:
-        meta = need_recorder().stop()
+        meta = need_recorder().stop(by_user=True)
         if meta is None:
             raise HTTPException(409, "not recording")
         return meta

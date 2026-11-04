@@ -1,0 +1,23 @@
+# The Pi 3 window mount (Mar-Apr 2026), which recorded the old wth-inference-training
+# dataset. `wth-edge eval` uses these ROIs for imported clips, which have none of their own.
+# Converted from the old code's pixel ROIs at 1280x720:
+#   bridge: 165x135 box, offset -105,+105 from centre  (wth-inference-training bridge.py)
+#   boat:   700x100 box, offset +300,+200 from centre  (Pi 3 boat detector)
+# Clips before 2026-03-18 used a different bridge box (165x165, offset +25,+135).
+
+[site]
+name = "legacy-pi3"
+left_is = "WEST"
+right_is = "EAST"
+
+[site.rois.bridge]
+x = 0.353
+y = 0.551
+w = 0.129
+h = 0.188
+
+[site.rois.boat]
+x = 0.461
+y = 0.708
+w = 0.539
+h = 0.139
