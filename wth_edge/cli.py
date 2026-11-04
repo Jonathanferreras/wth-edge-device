@@ -48,7 +48,8 @@ def main(argv: list[str] | None = None) -> int:
     play_p.add_argument("--seconds", type=float, help="stop after this long")
     play_p.add_argument("--speed", type=float, default=1.0, help="playback speed multiplier")
     art_p = sub.add_parser("art", help="list or rebuild the bundled pixel art")
-    art_p.add_argument("action", choices=["list", "build"])
+    art_p.add_argument("action", choices=["list", "build", "live-preview"],
+                       help="live-preview renders the live telemetry scene for sample states")
     art_p.add_argument("names", nargs="*", help="scenes to build (default: all)")
     art_p.add_argument("--out", help="write GIFs here instead of the package folder")
     sub.add_parser("doctor", help="check this Pi against its profile")
@@ -83,6 +84,12 @@ def main(argv: list[str] | None = None) -> int:
         from .display.art import scenes
         from .display.art.player import available, load
 
+        if args.action == "live-preview":
+            from .display.art.live import build_demos
+
+            for path in build_demos(Path(args.out or "live-preview").expanduser()):
+                print(path)
+            return 0
         if args.action == "build":
             out = Path(args.out).expanduser() if args.out else scenes.GIF_DIR
             for path in scenes.build(out, args.names or None):

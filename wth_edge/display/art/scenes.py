@@ -143,13 +143,26 @@ WATER_Y = 44
 DUCK_X, DUCK_WATERLINE = 40, 64
 
 
-def sky(img: Image.Image, t: int, night: float = 0.0) -> None:
-    """Purple sky with a striped synthwave sun; ``night`` dims it for the sleep scene."""
+def sun_colours(heat: float | None, night: bool) -> tuple[str, str]:
+    """(outer, core) sun colours. ``heat`` 0 = cool Pi, 1 = hot; None = the plain look."""
+    if heat is None:
+        return ("V", "F") if night else ("F", "Y")
+    if heat < 0.4:
+        return ("V", "Q") if night else ("F", "Y")
+    if heat < 0.75:
+        return "F", "O"
+    return "R", "R" if heat >= 0.9 else "O"
+
+
+def sky(img: Image.Image, t: int, night: float = 0.0, heat: float | None = None) -> None:
+    """Purple sky with a striped synthwave sun; ``night`` dims it, ``heat`` reddens it."""
     vgradient(img, 0, WATER_Y, "u", "U" if night < 0.5 else "u")
     d = ImageDraw.Draw(img)
-    sun = "F" if night < 0.5 else "V"
+    sun, core = sun_colours(heat, night >= 0.5)
+    if heat is not None and heat >= 0.9 and t % 4 < 2:  # overheating: the sun pulses
+        sun, core = "F", "R"
     d.ellipse((26, 10, 54, 38), fill=c(sun))
-    d.ellipse((30, 10, 50, 26), fill=c("Y" if night < 0.5 else "F"))
+    d.ellipse((30, 10, 50, 26), fill=c(core))
     # stripes cut out of the lower half, scrolling down slowly
     for k in range(5):
         y = 26 + k * 3 + (t // 3) % 3
@@ -165,8 +178,10 @@ _BUILDINGS = [  # x0, x1, top
 ]
 
 
-def skyline(img: Image.Image, t: int, lights_on: float = 0.6) -> None:
+def skyline(img: Image.Image, t: int, lights_on: float = 0.6, brownout: bool = False, rec: bool = False) -> None:
+    """Towers with lit windows; ``brownout`` (low power) makes the whole city stutter."""
     rng = random.Random(7)
+    dark = brownout and (t % 5 in (1, 3) or t % 11 == 0)
     for x0, x1, top in _BUILDINGS:
         rect(img, (x0, top, x1, WATER_Y), "K")
         put(img, x0, top, "V")
@@ -174,6 +189,8 @@ def skyline(img: Image.Image, t: int, lights_on: float = 0.6) -> None:
             for wx in range(x0 + 1, x1 - 1, 2):
                 r = rng.random()
                 flicker = rng.random() < 0.08 and (t // 2 + wx) % 5 == 0
+                if brownout and (dark or (wx + wy + t) % 3 == 0):
+                    continue
                 if r < lights_on and not flicker:
                     put(img, wx, wy, "Q" if r < 0.25 else "F" if r < 0.42 else "Y" if r < 0.5 else "V")
     # vertical neon sign on the tall right tower, buzzing now and then
@@ -183,6 +200,8 @@ def skyline(img: Image.Image, t: int, lights_on: float = 0.6) -> None:
     # antenna light
     put(img, 60, 10, "R" if t % 8 < 4 else "K")
     put(img, 60, 11, "G")
+    if rec and t % 8 < 5:  # recording: a red dot beside the sign
+        rect(img, (52, 15, 55, 18), "R")
 
 
 def bridge(img: Image.Image, lift: float = 0.0, lamps: str = "F") -> None:
@@ -291,10 +310,11 @@ def glitch(img: Image.Image, seed: int, bands: int = 3) -> Image.Image:
     return out
 
 
-def canal_scene(t: int, lift: float = 0.0, on_water=None, night: bool = False) -> Image.Image:
+def canal_scene(t: int, lift: float = 0.0, on_water=None, night: bool = False, heat: float | None = None,
+                brownout: bool = False, rec: bool = False, lights_on: float | None = None) -> Image.Image:
     img = canvas("u")
-    sky(img, t, night=1.0 if night else 0.0)
-    skyline(img, t, lights_on=0.25 if night else 0.6)
+    sky(img, t, night=1.0 if night else 0.0, heat=heat)
+    skyline(img, t, lights_on=(0.25 if night else 0.6) if lights_on is None else lights_on, brownout=brownout, rec=rec)
     water(img, t, glow=0.5 if night else 1.0)
     bridge(img, lift, lamps="V" if night else "F")
     if on_water:
@@ -303,8 +323,29 @@ def canal_scene(t: int, lift: float = 0.0, on_water=None, night: bool = False) -
     return img
 
 
-def _duck(img: Image.Image, sprite: Sprite, t: int, bob: int = 0, x: int = DUCK_X) -> None:
+def visor_off(sprite: Sprite) -> Sprite:
+    """The visor with no signal (camera down): a dark lens."""
+    rows = list(sprite.rows)
+    if sprite.h == MALLARD.h:
+        rows[VISOR_ROW] = rows[VISOR_ROW].replace("Q", "K").replace("F", "G").replace("V", "K")
+    return Sprite(rows)
+
+
+def visor_static(img: Image.Image, x: int, y: int, t: int) -> None:
+    """Grey and red static on a dead visor lens."""
+    for k in range(VISOR_X0, VISOR_X1):
+        if (k * 7 + t * 3) % 5 < 2:
+            put(img, x + k, y + VISOR_ROW, "R" if (k + t) % 7 == 0 else "G")
+
+
+def _duck(img: Image.Image, sprite: Sprite, t: int, bob: int = 0, x: int = DUCK_X, camera_ok: bool = True) -> None:
     y = DUCK_WATERLINE - sprite.h + 1 + bob
+    if not camera_ok:
+        stamp(img, visor_off(sprite), x, y)
+        if sprite.h == MALLARD.h:
+            visor_static(img, x, y, t)
+        ripples(img, x + 3, DUCK_WATERLINE, sprite.w - 6, t)
+        return
     stamp(img, sprite, x, y)
     if sprite is MALLARD or (sprite.h == MALLARD.h and sprite is not MALLARD_BLINK):
         k = VISOR_X0 + t % 16  # a white glint sweeps across the lens now and then

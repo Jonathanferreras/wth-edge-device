@@ -33,7 +33,7 @@ and data too).
 | Unit | Command | Does |
 | --- | --- | --- |
 | `wth-edge.service` | `wth-edge run` | Owns the camera (Picamera2), records clips, collects telemetry, writes `/run/wth/state.json`, serves the web panel on port 8080, hands data to the publisher. |
-| `wth-display.service` | `wth-edge display` | Plays the boot animation, then redraws the round GC9A01 screen from `state.json` every second. Separate on purpose: it shows **OFFLINE** when the main app is down. |
+| `wth-display.service` | `wth-edge display` | Plays the boot animation, then draws the round GC9A01 screen from `state.json`: the live pixel art scene, the text status, or both in turn (`display.mode`). Separate on purpose: it shows **OFFLINE** when the main app is down. |
 
 Useful commands on the Pi:
 
@@ -178,6 +178,34 @@ sudo systemctl stop wth-display         # the player and the status screen share
 wth-edge play idle --seconds 30         # any bundled name, a .gif, or a folder of PNG frames
 sudo systemctl start wth-display
 ```
+
+### Telemetry in the art
+
+With `display.mode = "art"` (or `"alternate"`, the default: 20 s of art, then 6 s of the text
+status screen, set by `art_s` and `status_s`) the screen draws the canal scene live at
+`art_fps` (8) from `state.json`, with the telemetry drawn into it (`art/live.py`):
+
+| Shows | Means |
+| --- | --- |
+| ring colour | overall status: cyan ok, amber degraded, red offline, violet starting |
+| bridge up or down, flashing lamps | `bridge.position`, eased while opening or closing |
+| neon boat crossing | a boat is detected, in its direction (`w2e` sails left to right) |
+| mallard flapping under a "!" | the bridge isn't closed or a boat is passing |
+| visor glowing, or dark with static | camera ok, or camera down |
+| sun yellow, orange, pulsing red | CPU temperature from 50 °C to 80 °C and up |
+| skyline browning out and glitching | under-voltage right now |
+| red dot by the "WTH" sign | recording |
+| sleeping mallard, dim city | `night_hours` (22 to 6), unless something is happening |
+| ticker on the bottom strip | one reading at a time: temperature, volts, fps, warnings, boat, bridge, REC |
+
+| ok | boat, bridge open, recording | hot and low power |
+| --- | --- | --- |
+| ![ok](docs/screen/live-ok.gif) | ![boat](docs/screen/live-boat.gif) | ![hot](docs/screen/live-hot-lowpower.gif) |
+| **camera down** | **night** | **offline** |
+| ![camera down](docs/screen/live-camera-down.gif) | ![night](docs/screen/live-night.gif) | ![offline](docs/screen/live-offline.gif) |
+
+`wth-edge art live-preview --out <dir>` renders these previews from the sample states in
+`art/live.py`.
 
 `wth-display.service` plays `display.boot_animation` (default `boot`, `""` for none) once
 when it starts, then shows the status screen. Any GIF works with `wth-edge play`, including
