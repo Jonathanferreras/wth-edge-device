@@ -160,9 +160,10 @@ works on a laptop too: it encodes the 640x360 preview frames with PyAV.
 
 ## Pixel art on the round screen
 
-Retro pixel art lives in `wth_edge/display/art/`: a small drawing kit (`kit.py`: a 20 colour
-palette, ASCII sprites, a 3x5 pixel font, Bayer dithering, the round mask), the scenes drawn
-with it (`scenes.py`), and a player (`player.py`). Scenes are drawn on an 80x80 canvas and
+Retro pixel art lives in `wth_edge/display/art/`: a small drawing kit (`kit.py`: a 26 colour
+palette with neons, ASCII sprites, a 3x5 pixel font, Bayer dithering, the round mask), the
+scenes drawn with it (`scenes.py`: a mallard on a rainy neon cyberpunk canal, with CRT
+scanlines and VHS glitches), and a player (`player.py`). Scenes are drawn on an 80x80 canvas and
 scaled 3x to the 240x240 panel. The built GIFs in `wth_edge/display/art/gifs/` are both the
 previews and what the Pi plays.
 

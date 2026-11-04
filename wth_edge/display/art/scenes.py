@@ -1,7 +1,12 @@
 """The bundled animations, drawn in code with the pixel kit.
 
+The theme is a neon cyberpunk canal at night: a synthwave sun behind a skyline of lit
+windows, rain, a bascule bridge, the hutch on stilts with neon trim, and a mallard drake
+paddling in the water.
+
 Each scene is a function returning ``(frames, durations_ms, loop)``. Frames are 80x80 art
-canvases; ``build`` masks them to the circle and scales them to 240x240 GIFs.
+canvases; ``build`` masks them to the circle, adds CRT scanlines and scales them to
+240x240 GIFs.
 
 To add a scene: write a function here, add it to ``SCENES``, run ``wth-edge art build``.
 """
@@ -9,11 +14,13 @@ To add a scene: write a function here, add it to ``SCENES``, run ``wth-edge art 
 from __future__ import annotations
 
 import math
+import random
 from pathlib import Path
 
 from PIL import Image, ImageDraw
 
 from .kit import (
+    PALETTE,
     SIZE,
     Sprite,
     c,
@@ -22,378 +29,407 @@ from .kit import (
     put,
     rect,
     ring,
-    shadow,
     stamp,
     text,
     vgradient,
 )
 
 GIF_DIR = Path(__file__).parent / "gifs"
+SCANLINE_DIM = 0.55
 
 # ---------------------------------------------------------------- sprites
-BUNNY_SIT = Sprite("""
-..........KK.KK....
-.........KWPKWPK...
-.........KWPKWPK...
-.........KWPKWPK...
-.........KWPKWWK...
-.........KWWKWK....
-........KKWWWWKK...
-.......KWWWWWWWWK..
-......KWWWWWWKWWWK.
-...KKKWWWWWWWKWWWK.
-..KWWWWWWWWWWWWWPK.
-.KWWWWWWWWWWWWWWK..
-KgWWWWWWWWWWWKKK...
-KggWWWWWWWWWWK.....
-KgWWWWWWWWgWWK.....
-.KWWWWWWWgWWWK.....
-.KgWWWWWWgWWPK.....
-..KKKKKKKKKKKK.....
+# Mallard drake facing right, sitting on the water: green head, white collar, brown chest,
+# grey body, blue-violet speculum, black tail curl. The bottom row is the waterline.
+MALLARD = Sprite("""
+..............KKKK....
+.............KHHHHK...
+............KHHHHKHK..
+............KHHHHHHKKK
+............KHHHHHHYYYK
+.............KHHHHKYYK
+..............KWWWK...
+.K.....KKKKKKKBBBBK...
+KWK..KKggggggggBBBBK..
+KKKKKgggggggggggBBBBK.
+.KKggGGGGGGggggggBBBK.
+..KggVVbbGGGggggggggK.
+...KgggggggggggggggK..
+....KKKKKKKKKKKKKKK...
 """)
-
-# Eye closed: the two eye pixels become one lash line.
-BUNNY_BLINK = Sprite(BUNNY_SIT.rows[:8] + ["......KWWWWWWWWWWK.", "...KKKWWWWWWKKWWWK."] + BUNNY_SIT.rows[10:])
-
-# Front ear flicked back.
-BUNNY_FLICK = Sprite([
-    "...................",
-    "...................",
-    "..........KK.......",
-    ".........KWPK.KKK..",
-    ".........KWPKKWPPK.",
-    ".........KWWKWWKK..",
-] + BUNNY_SIT.rows[6:])
-
-# Nose twitch: the pink nose moves up a pixel.
-BUNNY_SNIFF = Sprite(BUNNY_SIT.rows[:9] + ["...KKKWWWWWWWKWWPK.", "..KWWWWWWWWWWWWWWK."] + BUNNY_SIT.rows[11:])
-
-BUNNY_ALERT = Sprite("""
-.......KK.KK....
-......KWPKWPK...
-......KWPKWPK...
-......KWPKWPK...
-......KWPKWPK...
-......KWWKWWK...
-.....KKWWWWWKK..
-....KWWWWWWWWWK.
-....KWWWWWKWWWWK
-....KWWWWWKWWWPK
-....KWWWWWWWWWK.
-.....KKWWWWWKK..
-....KWWWWWWWK...
-...KWWWWWWWWWK..
-...KWWWWWWWgWK..
-...KWWWWWWKWWK..
-..KgWWWWWWWWK...
-..KgWWWWWWWWK...
-.KggWWWWWWWWK...
-.KgWWWWWWWWWK...
-.KgWWWWgWWWPK...
-..KKKKKKKKKKK...
+MALLARD_BLINK = Sprite(MALLARD.rows[:2] + ["............KHHHHHHK..", "............KHHHKKHKKK"] + MALLARD.rows[4:])
+# Quack: bill open.
+MALLARD_QUACK = Sprite(MALLARD.rows[:3] + [
+    "............KHHHHHHKKKK",
+    "............KHHHHHHK...",
+    ".............KHHHHKYYYK",
+] + MALLARD.rows[6:])
+# Head down for a dabble: the head drops behind the chest, tail tips up.
+MALLARD_DABBLE = Sprite("""
+.KK...................
+KWWK..................
+KKKKK.................
+..KKKKK...............
+....KKggKKKKKKK.......
+.....KggggggggBBK.....
+......KgggggggggBBKHHK
+......KGGGGGggggggBHHK
+.......KVVbbGGgggggKYYK
+........KggggggggggK.K
+.........KKKKKKKKKK...
 """)
-
-BUNNY_LOAF = Sprite("""
-.......KKKKKKKKK........
-......KPPPPPPPWWK.......
-.......KKKKKKKWWKK......
-.....KKWWWWWWWWWKWKK....
-...KKWWWWWWWWWWWWKWWK...
-..KWWWWWWWWWWWWWWKWWWK..
-.KWWWWWWWWWWWWWWWWWWWWK.
-.KWWWWWWWWWWWWWWWKKWWWPK
-KgWWWWWWWWWWWWWWWWWWWWK.
-KgWWWWWWWWWWWWWWWWWWWK..
-KggWWWWWWWWWWWWgWWWWK...
-.KgggWWWWWWWWWWgWWWK....
-..KKKKKKKKKKKKKKKKK.....
+WING = Sprite("""
+....KK
+...KggK
+..KgggK
+.KgGgK.
+KgGVK..
+KKKK...
 """)
-# Breathing in: one extra row of fur, drawn a pixel higher.
-BUNNY_LOAF_IN = Sprite(BUNNY_LOAF.rows[:6] + [BUNNY_LOAF.rows[6]] + BUNNY_LOAF.rows[6:])
-
-BUNNY_FACE = Sprite("""
-....KK......KK......
-...KWPK....KWPK.....
-...KWPK....KWPK.....
-...KWPK....KWPK.....
-...KWPK....KWPK.....
-...KWPK....KWPK.....
-...KWWK....KWWK.....
-..KKWWWKKKKWWWKK....
-.KWWWWWWWWWWWWWWK...
-KWWWWWWWWWWWWWWWWK..
-KWWWKKWWWWWWKKWWWK..
-KWWWKKWWWWWWKKWWWK..
-KWPPWWWWWWWWWWPPWK..
-KWWWWWWWKPPKWWWWWK..
-.KWWWWWWWKKWWWWWK...
-.KWWWWWWKWWKWWWWK...
-..KKWWWWWWWWWWKK....
-....KKKKKKKKKK......
+MALLARD_SLEEP = Sprite("""
+.........KKKKK........
+........KHHHHHK.......
+.K.....KHHKKHHHK......
+KWK..KKKHHHHHHHKK.....
+KKKKKggKKWWWWWKBBK....
+.KKggGGGGGGggggBBBK...
+..KggVVbbGGGggggggBK..
+...KgggggggggggggggK..
+....KKKKKKKKKKKKKKK...
 """)
-BUNNY_FACE_BLINK = Sprite(BUNNY_FACE.rows[:10] + ["KWWWWWWWWWWWWWWWWK..", "KWWWKKWWWWWWKKWWWK.."] + BUNNY_FACE.rows[12:])
-
-CLOUD = Sprite("""
-...WWWW.....
-.WWWWWWWW...
-WWWWWWWWWWW.
-.ssssssssss.
+MALLARD_FACE = Sprite("""
+.......KKKKKK.......
+.....KKHHHHHHKK.....
+....KHHHHHHHHHHK....
+...KHHHHHHHHHHHHK...
+...KHKKHHHHHHKKHK...
+...KHKWHHHHHHKWHK...
+...KHHHHHHHHHHHHK...
+...KHHHHKKKKHHHHK...
+...KHHHKYYYYKHHHK...
+...KHHKYYYYYYKHHK...
+....KHKYYOOYYKHK....
+.....KKYYYYYYKK.....
+......KKKKKKKK......
+.....KWWWWWWWWK.....
+....KBBBBBBBBBBK....
+...KBBBBBBBBBBBBK...
 """)
+MALLARD_FACE_BLINK = Sprite(MALLARD_FACE.rows[:4] + ["...KHHHHHHHHHHHHK...", "...KHKKHHHHHHKKHK..."] + MALLARD_FACE.rows[6:])
 
 BOAT = Sprite("""
-.....K.....
-.....KW....
-.....KWW...
-.....KWWW..
+.....Q.....
+.....QF....
+.....QFF...
+.....QFFF..
 KKKKKKKKKKK
-KCCCCCCCCK.
-.KDDDDDDK..
+KQQQQQQQQK.
+.KuuuuuuK..
 """)
 
 Z = Sprite("""
-WWW
-..W
-.W.
-W..
-WWW
+QQQ
+..Q
+.Q.
+Q..
+QQQ
 """)
 
 # ---------------------------------------------------------------- props
-GROUND_Y = 58
+WATER_Y = 44
+DUCK_X, DUCK_WATERLINE = 40, 64
 
 
-def sky_day(img: Image.Image, t: int) -> None:
-    vgradient(img, 0, 46, "c", "s")
-    for k, (x0, y, speed) in enumerate(((6, 12, 0.25), (50, 20, 0.15), (30, 6, 0.1))):
-        x = int(x0 + t * speed) % (SIZE + 24) - 14
-        stamp(img, CLOUD, x, y)
+def sky(img: Image.Image, t: int, night: float = 0.0) -> None:
+    """Purple sky with a striped synthwave sun; ``night`` dims it for the sleep scene."""
+    vgradient(img, 0, WATER_Y, "u", "U" if night < 0.5 else "u")
+    d = ImageDraw.Draw(img)
+    sun = "F" if night < 0.5 else "V"
+    d.ellipse((26, 10, 54, 38), fill=c(sun))
+    d.ellipse((30, 10, 50, 26), fill=c("Y" if night < 0.5 else "F"))
+    # stripes cut out of the lower half, scrolling down slowly
+    for k in range(5):
+        y = 26 + k * 3 + (t // 3) % 3
+        if y < 38:
+            rect(img, (24, y, 56, y + 1 + k // 2), "U" if night < 0.5 else "u")
+    for k, (x, y) in enumerate(((8, 8), (18, 4), (62, 6), (70, 14), (12, 18), (58, 2))):
+        if (t + k * 5) % 14 < 10:
+            put(img, x, y, "W" if k % 2 else "Q")
 
 
-def sky_night(img: Image.Image, t: int) -> None:
-    vgradient(img, 0, 46, "N", "n")
-    # moon with a crater
-    ImageDraw.Draw(img).ellipse((54, 9, 63, 18), fill=c("M"))
-    put(img, 57, 12, "O")
-    put(img, 60, 15, "O")
-    stars = [(14, 14), (24, 7), (36, 12), (44, 5), (70, 26), (20, 28), (46, 22), (8, 34), (66, 6)]
-    for k, (x, y) in enumerate(stars):
-        phase = (t + k * 3) % 12
-        if phase < 9:
-            put(img, x, y, "W" if phase < 4 else "G")
-        if phase < 2:  # brightest: a little cross
-            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
-                put(img, x + dx, y + dy, "G")
+_BUILDINGS = [  # x0, x1, top
+    (0, 9, 22), (9, 16, 30), (16, 24, 16), (24, 30, 32), (50, 56, 26), (56, 64, 12), (64, 71, 28), (71, 80, 20),
+]
 
 
-def river(img: Image.Image, t: int, night: bool = False) -> None:
-    base, hi = ("n", "b") if night else ("b", "s")
-    rect(img, (0, 46, SIZE, GROUND_Y - 4), base)
-    for y in range(47, GROUND_Y - 4, 2):
-        for x in range(SIZE):
-            if (x + t + y * 3) % 11 == 0:
-                put(img, x, y, hi)
-                put(img, x + 1, y, hi)
-    if night:  # moon reflection
-        for y in range(47, GROUND_Y - 4):
-            if (y + t) % 2 == 0:
-                rect(img, (57 + (y + t) % 3 - 1, y, 61 - (y % 2), y + 1), "M")
+def skyline(img: Image.Image, t: int, lights_on: float = 0.6) -> None:
+    rng = random.Random(7)
+    for x0, x1, top in _BUILDINGS:
+        rect(img, (x0, top, x1, WATER_Y), "K")
+        put(img, x0, top, "V")
+        for wy in range(top + 2, WATER_Y - 1, 3):
+            for wx in range(x0 + 1, x1 - 1, 2):
+                r = rng.random()
+                flicker = rng.random() < 0.08 and (t // 2 + wx) % 5 == 0
+                if r < lights_on and not flicker:
+                    put(img, wx, wy, "Q" if r < 0.25 else "F" if r < 0.42 else "Y" if r < 0.5 else "V")
+    # vertical neon sign on the tall right tower, buzzing now and then
+    if not (t % 23 in (5, 7)):
+        for k, ch in enumerate("WTH"):
+            text(img, ch, 57, 14 + k * 6, "F")
+    # antenna light
+    put(img, 60, 10, "R" if t % 8 < 4 else "K")
+    put(img, 60, 11, "G")
 
 
-def bridge(img: Image.Image, lift: float = 0.0, night: bool = False) -> None:
-    """A little bascule bridge on the far bank; ``lift`` 0 = down, 1 = fully open."""
-    steel = "G" if not night else "n"
-    left, right, deck_y = 40, 76, 44
+def bridge(img: Image.Image, lift: float = 0.0, lamps: str = "F") -> None:
+    """A little bascule bridge across the canal; ``lift`` 0 = down, 1 = fully open."""
+    left, right, deck_y = 34, 76, WATER_Y
     for x in (left, right):
-        rect(img, (x - 1, 37, x + 2, deck_y + 3), "K" if night else "D")
-        rect(img, (x - 1, 36, x + 2, 37), "R")  # warning lamps
+        rect(img, (x - 1, 37, x + 2, deck_y + 3), "u")
+        rect(img, (x - 1, 36, x + 2, 37), lamps)
     span = (right - left) / 2
     ang = math.radians(75 * lift)
     d = ImageDraw.Draw(img)
     for pivot, sign in ((left + 1, 1), (right, -1)):
         x2 = pivot + sign * span * math.cos(ang)
         y2 = deck_y - span * math.sin(ang)
-        d.line((pivot, deck_y, x2, y2), fill=c(steel), width=2)
+        d.line((pivot, deck_y, x2, y2), fill=c("Q"), width=1)
+        d.line((pivot, deck_y + 1, x2, y2 + 1), fill=c("V"), width=1)
 
 
-def grass(img: Image.Image, t: int, night: bool = False) -> None:
-    top, low = ("e", "N") if night else ("E", "e")
-    rect(img, (0, GROUND_Y - 4, SIZE, GROUND_Y - 2), "e" if not night else "n")  # bank
-    vgradient(img, GROUND_Y - 2, SIZE, top, low)
-    for x in range(2, SIZE, 5):
-        sway = 1 if ((x // 5 + t // 4) % 3 == 0) else 0
-        h = 2 + (x * 7) % 3
-        for k in range(h):
-            put(img, x + (sway if k == h - 1 else 0), GROUND_Y - 2 - k, "L" if not night else "e")
+def water(img: Image.Image, t: int, glow: float = 1.0) -> None:
+    """Dark canal with wobbling neon reflections of the skyline and the sun."""
+    vgradient(img, WATER_Y, SIZE, "U", "u")
+    px = img.load()
+    for y in range(WATER_Y + 1, SIZE, 2):
+        wob = int(2 * math.sin((y + t) / 2.0))
+        for x in range(SIZE):
+            src = px[(x + wob) % SIZE, WATER_Y - 1 - (y - WATER_Y) // 2]
+            # reflections fade out before the duck's lane so it stays readable
+            if src not in (c("K"), c("u"), c("U")) and (x + y + t) % 3 != 0 and (y - WATER_Y) < 14 * glow:
+                px[x, y] = src
+    for k in range(6):  # foam highlights drifting across
+        x = (k * 17 + t) % SIZE
+        y = WATER_Y + 4 + k * 5
+        put(img, x, y, "s")
+        put(img, x + 1, y, "Q")
 
 
-def hutch(img: Image.Image, night: bool = False) -> None:
-    x0, x1, top, base = 8, 34, 36, GROUND_Y - 3
+def rain(img: Image.Image, t: int, n: int = 26, color: str = "Q") -> None:
+    rng = random.Random(3)
+    for _ in range(n):
+        x0, y0, sp = rng.randrange(SIZE), rng.randrange(SIZE), rng.choice((2, 3))
+        y = (y0 + t * sp) % SIZE
+        x = (x0 - (t * sp) // 3) % SIZE
+        put(img, x, y, color)
+        put(img, x - 1, y + 1, "V")
+
+
+def hutch(img: Image.Image, t: int, glow: str = "Q") -> None:
+    """The hutch on stilts over the water, wood under neon trim."""
+    x0, x1, top, base = 6, 30, 36, 54
     d = ImageDraw.Draw(img)
-    # legs
-    for x in (x0 + 2, x1 - 4):
-        rect(img, (x, base, x + 2, GROUND_Y + 1), "D")
-    # body with planks
+    for x in (x0 + 2, x1 - 4):  # stilts into the water
+        rect(img, (x, base, x + 2, 64), "D")
+        put(img, x, 64, "Q")
+    rect(img, (x0 - 2, base, x1 + 2, base + 2), "D")  # deck
     rect(img, (x0, top, x1, base), "B")
     for y in range(top + 3, base, 4):
         rect(img, (x0, y, x1, y + 1), "D")
-    d.rectangle((x0, top, x1 - 1, base - 1), outline=c("K"))
-    # mesh window
-    wx0, wx1, wy0, wy1 = x0 + 3, x0 + 13, top + 3, top + 13
-    rect(img, (wx0, wy0, wx1, wy1), "Y" if night else "K")
+    d.rectangle((x0, top, x1 - 1, base - 1), outline=c("F"))
+    # glowing mesh window
+    wx0, wx1, wy0, wy1 = x0 + 3, x0 + 12, top + 3, top + 12
+    rect(img, (wx0, wy0, wx1, wy1), glow)
     for x in range(wx0, wx1, 2):
         for y in range(wy0, wy1, 2):
-            put(img, x, y, "O" if night else "G")
-    d.rectangle((wx0 - 1, wy0 - 1, wx1, wy1), outline=c("D"))
-    # straw peeking out of the window
-    if not night:
-        for x in range(wx0, wx1, 3):
-            put(img, x + 1, wy1 - 1, "O")
+            put(img, x, y, "u")
+    d.rectangle((wx0 - 1, wy0 - 1, wx1, wy1), outline=c("K"))
     # door
-    dx0, dx1 = x1 - 10, x1 - 3
-    rect(img, (dx0, top + 5, dx1, base), "D")
-    d.rectangle((dx0, top + 5, dx1 - 1, base - 1), outline=c("K"))
-    put(img, dx1 - 2, top + 11, "O")  # latch
-    # roof
-    d.polygon([(x0 - 3, top), (x1 + 2, top), ((x0 + x1) // 2, top - 11)], fill=c("C"), outline=c("K"))
-    for y in range(top - 8, top, 3):
-        half = (y - (top - 11)) * (x1 - x0 + 5) // 22
-        d.line(((x0 + x1) // 2 - half + 1, y, (x0 + x1) // 2 + half - 1, y), fill=c("B"))
-    # little sign
-    rect(img, (x0 + 15, top + 1, x0 + 22, top + 4), "O")
-    put(img, x0 + 17, top + 2, "D")
-    put(img, x0 + 19, top + 2, "D")
+    dx0, dx1 = x1 - 9, x1 - 3
+    rect(img, (dx0, top + 5, dx1, base), "u")
+    d.rectangle((dx0, top + 5, dx1 - 1, base - 1), outline=c("V"))
+    put(img, dx1 - 2, top + 11, "Y")
+    # roof with a neon edge
+    apex = ((x0 + x1) // 2, top - 10)
+    d.polygon([(x0 - 3, top), (x1 + 2, top), apex], fill=c("u"))
+    d.line([(x0 - 3, top), apex, (x1 + 2, top)], fill=c("Q"))
+    # tiny "HUTCH" plate under the roof, flickers rarely
+    if t % 31 != 3:
+        rect(img, (x0 + 13, top + 1, x0 + 21, top + 4), "K")
+        for k in range(4):
+            put(img, x0 + 14 + 2 * k, top + 2, "F")
 
 
-def day_scene(t: int, lift: float = 0.0, on_river=None) -> Image.Image:
-    img = canvas()
-    sky_day(img, t)
-    river(img, t)
-    bridge(img, lift)
-    if on_river:
-        on_river(img)
-    grass(img, t)
-    hutch(img)
+def ripples(img: Image.Image, x: int, y: int, w: int, t: int) -> None:
+    spread = (t // 2) % 4
+    for k in range(w):
+        if (k + t) % 3:
+            put(img, x + k, y + 1, "Q")
+    put(img, x - 2 - spread, y + 2, "V")
+    put(img, x + w + 1 + spread, y + 2, "V")
+    put(img, x - 3 - spread, y + 2, "V")
+    put(img, x + w + 2 + spread, y + 2, "V")
+
+
+def glitch(img: Image.Image, seed: int, bands: int = 3) -> Image.Image:
+    """Shift a few horizontal bands sideways, with a magenta/cyan fringe: a VHS glitch."""
+    rng = random.Random(seed)
+    out = img.copy()
+    for _ in range(bands):
+        y0 = rng.randrange(0, SIZE - 4)
+        h = rng.randint(1, 4)
+        dx = rng.choice((-4, -3, -2, 2, 3, 4))
+        band = img.crop((0, y0, SIZE, y0 + h))
+        out.paste(band, (dx, y0))
+        for y in range(y0, y0 + h):
+            put(out, 0 if dx > 0 else SIZE - 1, y, "F")
+            put(out, dx - 1 if dx > 0 else SIZE + dx, y, "Q")
+    return out
+
+
+def canal_scene(t: int, lift: float = 0.0, on_water=None, night: bool = False) -> Image.Image:
+    img = canvas("u")
+    sky(img, t, night=1.0 if night else 0.0)
+    skyline(img, t, lights_on=0.25 if night else 0.6)
+    water(img, t, glow=0.5 if night else 1.0)
+    bridge(img, lift, lamps="V" if night else "F")
+    if on_water:
+        on_water(img)
+    hutch(img, t, glow="V" if night else "Q")
     return img
+
+
+def _duck(img: Image.Image, sprite: Sprite, t: int, bob: int = 0, x: int = DUCK_X) -> None:
+    stamp(img, sprite, x, DUCK_WATERLINE - sprite.h + 1 + bob)
+    ripples(img, x + 3, DUCK_WATERLINE, sprite.w - 6, t)
 
 
 # ---------------------------------------------------------------- scenes
 def boot():
-    """Copper ring draws in, the bunny pops up, the title types out, a blink. Plays once."""
+    """Cyan ring draws in, the mallard rises, the title types out in neon, then a glitch and a blink."""
     frames, durs = [], []
+    face_x, face_y = 20, 4   # drawn at 2x: 40x32 art pixels
+    shelf = 40
 
     def base(ring_frac: float) -> Image.Image:
-        img = canvas("N")
+        img = canvas("u")
+        for y in range(0, SIZE, 4):  # faint grid floor, the retro-future way
+            rect(img, (0, y, SIZE, y + 1), "U")
         if ring_frac > 0:
-            ring(img, "C", 2, ring_frac)
+            ring(img, "Q", 2, ring_frac)
+            ring(img, "F", 1, ring_frac * 0.9)
+        return img
+
+    def with_face(img: Image.Image, dy: int = 0, blink: bool = False) -> Image.Image:
+        stamp(img, MALLARD_FACE_BLINK if blink else MALLARD_FACE, face_x, face_y + dy, scale=2)
+        rect(img, (0, shelf, SIZE, SIZE), "u")   # the mallard rises from behind the title
+        for x in range(0, SIZE, 2):
+            put(img, x, shelf, "F")
+        ring(img, "Q", 2)
+        ring(img, "F", 1)
         return img
 
     for k in range(1, 13):
         frames.append(base(k / 12))
         durs.append(50)
-    face_x, face_y = 20, 6   # drawn at 2x: 40x36 art pixels
-    shelf = 43
-
-    def with_face(img: Image.Image, dy: int = 0, blink: bool = False) -> Image.Image:
-        stamp(img, BUNNY_FACE_BLINK if blink else BUNNY_FACE, face_x, face_y + dy, scale=2)
-        rect(img, (0, shelf, SIZE, SIZE), "N")   # the bunny rises from behind the title
-        ring(img, "C", 2)
-        return img
-
     for k in range(10):
-        rise = round(38 * (1 - (k + 1) / 10) ** 2) - (2 if k == 8 else 0)  # ease out, small bounce
+        rise = round(36 * (1 - (k + 1) / 10) ** 2) - (2 if k == 8 else 0)  # ease out, small bounce
         frames.append(with_face(base(1), rise))
         durs.append(50)
     title = ["WATCH THE", "HUTCH"]
+    x_a = (SIZE - (len(title[0]) * 4 - 1)) // 2
+    x_b = (SIZE - (len(title[1]) * 8 - 2)) // 2
     for k in range(1, len(title[0]) + len(title[1]) + 1):
         img = with_face(base(1))
         a = title[0][:k]
         b = title[1][: max(0, k - len(title[0]))]
-        x_a = (SIZE - (len(title[0]) * 4 - 1)) // 2
-        x_b = (SIZE - (len(title[1]) * 8 - 2)) // 2
-        text(img, a, x_a, 47, "W", shadow="K")
-        text(img, b, x_b, 55, "C", scale=2, shadow="K")
+        text(img, a, x_a, 45, "Q")
+        text(img, b, x_b - 1, 53, "Q", scale=2)   # chromatic fringe
+        text(img, b, x_b, 53, "F", scale=2)
         frames.append(img)
         durs.append(60)
     final = frames[-1]
     blink = final.copy()
-    stamp(blink, BUNNY_FACE_BLINK, face_x, face_y, scale=2)
-    frames += [final, blink, final]
-    durs += [600, 140, 900]
+    stamp(blink, MALLARD_FACE_BLINK, face_x, face_y, scale=2)
+    frames += [final, glitch(final, 1, 4), glitch(final, 2, 2), final, blink, final]
+    durs += [500, 70, 70, 400, 140, 900]
     return frames, durs, False
 
 
 def idle():
-    """Daytime: clouds drift, water shimmers, the bunny blinks, sniffs and flicks an ear."""
+    """Rainy neon night: the mallard bobs, blinks, quacks and dabbles; windows flicker."""
     frames, durs = [], []
     n = 48
     for t in range(n):
-        img = day_scene(t)
-        ring(img, "E", 2)
-        sprite = BUNNY_SIT
-        if t in (12, 13, 36):
-            sprite = BUNNY_BLINK
-        elif 22 <= t <= 25 and t % 2 == 0:
-            sprite = BUNNY_SNIFF
-        elif 40 <= t <= 43:
-            sprite = BUNNY_FLICK
-        shadow(img, 46, GROUND_Y + 1, 15)
-        stamp(img, sprite, 46, GROUND_Y - sprite.h + 1)
+        img = canal_scene(t)
+        sprite = MALLARD
+        if t in (10, 11, 34):
+            sprite = MALLARD_BLINK
+        elif t in (18, 20):
+            sprite = MALLARD_QUACK
+        elif 38 <= t <= 43:
+            sprite = MALLARD_DABBLE
+        bob = 1 if (t // 4) % 2 else 0
+        _duck(img, sprite, t, bob)
+        if t in (18, 20):
+            text(img, "Q!", DUCK_X + 22, 42, "Y")
+        rain(img, t)
+        ring(img, "Q", 2)
+        if t == 29:
+            img = glitch(img, t, 2)
         frames.append(img)
         durs.append(125)
     return frames, durs, True
 
 
 def alert():
-    """Bridge opening: amber/red ring flashes, the bunny stands up, a boat sails through."""
+    """Bridge opening: magenta/amber ring flashes, the mallard flaps, a neon boat goes through."""
     frames, durs = [], []
     n = 32
     for t in range(n):
         # the boat crosses left to right, behind the hutch, under the open bridge
         bx = -12 + t * (SIZE + 12) // n
-        img = day_scene(t, lift=1.0, on_river=lambda im, bx=bx: stamp(im, BOAT, bx, 44))
-        ring(img, "Y" if (t // 2) % 2 == 0 else "R", 3)
-        # flashing lamps on the bridge towers
+        img = canal_scene(t, lift=1.0, on_water=lambda im, bx=bx: stamp(im, BOAT, bx, 41))
         if (t // 2) % 2 == 0:
-            for x in (40, 76):
+            for x in (34, 76):
                 rect(img, (x - 1, 35, x + 2, 37), "Y")
-        hop = (0, 1, 2, 1)[t % 4] if t % 8 < 4 else 0
-        shadow(img, 48, GROUND_Y + 1, 13)
-        stamp(img, BUNNY_ALERT, 48, GROUND_Y - BUNNY_ALERT.h + 1 - hop)
+        hop = (0, 2, 3, 2)[t % 4] if t % 8 < 4 else 0
+        _duck(img, MALLARD, t, -hop, x=DUCK_X + 2)
+        if t % 2 == 0:  # wing flap
+            stamp(img, WING, DUCK_X + 2 + 8, DUCK_WATERLINE - MALLARD.h - 3 - hop)
         # bouncing "!" in a speech bubble
         bob = 1 if (t // 3) % 2 else 0
-        bx0, by0 = 64, 22 + bob - hop
-        rect(img, (bx0, by0, bx0 + 7, by0 + 9), "W")
-        ImageDraw.Draw(img).rectangle((bx0, by0, bx0 + 6, by0 + 8), outline=c("K"))
-        rect(img, (bx0 + 3, by0 + 2, bx0 + 4, by0 + 5), "R")
-        put(img, bx0 + 3, by0 + 6, "R")
-        put(img, bx0 + 1, by0 + 9, "K")
+        bx0, by0 = DUCK_X + 22, 36 + bob - hop
+        rect(img, (bx0, by0, bx0 + 7, by0 + 9), "K")
+        ImageDraw.Draw(img).rectangle((bx0, by0, bx0 + 6, by0 + 8), outline=c("F"))
+        rect(img, (bx0 + 3, by0 + 2, bx0 + 4, by0 + 5), "Y")
+        put(img, bx0 + 3, by0 + 6, "Y")
+        put(img, bx0 + 1, by0 + 9, "F")
+        rain(img, t, n=36)
+        ring(img, "F" if (t // 2) % 2 == 0 else "Y", 3)
+        if t % 8 == 5:
+            img = glitch(img, t, 4)
         frames.append(img)
         durs.append(90)
     return frames, durs, True
 
 
 def sleep():
-    """Night: stars twinkle, the hutch window glows, the bunny breathes and Zzz float up."""
+    """Late night: most windows off, a violet sun, the mallard asleep with its head tucked, Zzz."""
     frames, durs = [], []
     n = 40
     for t in range(n):
-        img = canvas()
-        sky_night(img, t)
-        river(img, t // 2, night=True)
-        bridge(img, 0.0, night=True)
-        grass(img, 0, night=True)
-        hutch(img, night=True)
-        ring(img, "n", 2)
-        breathing_in = (t // 10) % 2 == 0
-        sprite = BUNNY_LOAF_IN if breathing_in else BUNNY_LOAF
-        shadow(img, 44, GROUND_Y + 2, 21, "N")
-        stamp(img, sprite, 44, GROUND_Y - sprite.h + 2)
+        img = canal_scene(t // 2, night=True)
+        bob = 1 if (t // 10) % 2 else 0
+        _duck(img, MALLARD_SLEEP, t // 3, bob)
         for k in range(3):
             phase = (t + k * 13) % n
-            zx = 60 + int(4 * math.sin(phase / 5)) + phase // 6
-            zy = 46 - phase
-            if 6 < zy < 44:
-                stamp(img, Z.replace("W", "s" if phase < 26 else "G"), zx, zy)
+            zx = DUCK_X + 12 + int(4 * math.sin(phase / 5)) + phase // 6
+            zy = 52 - phase
+            if 6 < zy < 50:
+                stamp(img, Z if phase < 26 else Z.replace("Q", "V"), zx, zy)
+        rain(img, t // 2, n=12, color="V")
+        ring(img, "V", 2)
         frames.append(img)
         durs.append(150)
     return frames, durs, True
@@ -408,7 +444,7 @@ def build(out_dir: Path = GIF_DIR, names: list[str] | None = None) -> list[Path]
     written = []
     for name in names or list(SCENES):
         frames, durs, loop = SCENES[name]()
-        big = [finish(f) for f in frames]
+        big = [scanlines(finish(f)) for f in frames]
         path = out_dir / f"{name}.gif"
         save_gif(big, durs, path, loop)
         written.append(path)
@@ -427,9 +463,22 @@ def save_gif(frames: list[Image.Image], durs: list[int], path: Path, loop: bool)
 
 def _unique_colours():
     seen = [(0, 0, 0)]
-    from .kit import PALETTE
-
     for rgb in PALETTE.values():
-        if rgb not in seen:
-            seen.append(rgb)
+        for col in (rgb, _dim(rgb)):
+            if col not in seen:
+                seen.append(col)
     return seen
+
+
+def _dim(rgb):
+    return tuple(int(v * SCANLINE_DIM) for v in rgb)
+
+
+def scanlines(img: Image.Image, every: int = 3) -> Image.Image:
+    """Darken the last row of each art pixel, like a CRT. Works on the 240x240 image."""
+    out = img.copy()
+    px = out.load()
+    for y in range(every - 1, out.height, every):
+        for x in range(out.width):
+            px[x, y] = _dim(px[x, y])
+    return out

@@ -15,7 +15,7 @@ SIZE = 80           # art pixels across the circle
 SCALE = 3           # 80 * 3 = 240, the GC9A01 panel
 PANEL = SIZE * SCALE
 
-# One 20 colour palette for every scene. Sprite strings use these letters; "." is transparent.
+# One 26 colour palette for every scene. Sprite strings use these letters; "." is transparent.
 # Navy, copper, green, amber and red are the same colours as the status screen.
 PALETTE: dict[str, tuple[int, int, int]] = {
     "K": (14, 12, 24),      # outline / near black
@@ -38,6 +38,13 @@ PALETTE: dict[str, tuple[int, int, int]] = {
     "Y": (250, 204, 21),    # amber (status degraded)
     "R": (239, 68, 68),     # red (status offline)
     "M": (255, 244, 196),   # moon
+    # cyberpunk neons
+    "F": (255, 46, 151),    # hot magenta
+    "Q": (0, 236, 255),     # electric cyan
+    "V": (140, 64, 230),    # violet
+    "U": (44, 18, 74),      # deep purple
+    "u": (20, 8, 36),       # night purple
+    "H": (26, 168, 88),     # mallard green
 }
 
 Color = tuple[int, int, int]
