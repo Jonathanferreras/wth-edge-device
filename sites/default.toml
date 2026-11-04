@@ -1,0 +1,25 @@
+# Calibration for one window. ROIs are fractions of the frame (x, y from the top-left,
+# w, h as widths), so they keep working if the resolution changes.
+#
+# Measured on the live view of jf-pi-5 (v2 window mount), Nov 4 2026:
+#   bridge: the bascule span from the left abutment to the right pier, from the pier feet
+#           up to well above the deck so the raised leaves stay inside
+#   boat:   the channel under the bridge and the river to the right edge of the frame
+# Fine-tune per Pi by overriding [site.rois.*] in /etc/wth/device.toml.
+
+[site]
+name = "default"
+left_is = "WEST"
+right_is = "EAST"
+
+[site.rois.bridge]
+x = 0.13
+y = 0.40   # extra headroom above the deck for the raised leaves
+w = 0.21
+h = 0.32
+
+[site.rois.boat]
+x = 0.24
+y = 0.61
+w = 0.76   # to the right edge: the whole visible path of a boat
+h = 0.21

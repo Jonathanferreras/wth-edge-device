@@ -1,0 +1,5 @@
+# Local development: `wth-edge --config dev/device.toml run`
+[device]
+id = "wth-dev"
+profile = "dev"
+site = "default"

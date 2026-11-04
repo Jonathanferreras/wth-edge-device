@@ -1,0 +1,18 @@
+[Unit]
+Description=Watch The Hutch round status screen
+# Independent of wth-edge.service on purpose: the screen says "offline" when the app is down.
+After=local-fs.target
+
+[Service]
+Type=simple
+User=wth
+Group=wth
+WorkingDirectory=@INSTALL_DIR@
+Environment=PYTHONUNBUFFERED=1
+ExecStart=@INSTALL_DIR@/.venv/bin/wth-edge display
+Restart=always
+RestartSec=5
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target

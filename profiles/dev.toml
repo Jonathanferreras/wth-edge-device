@@ -1,0 +1,24 @@
+# For a laptop: synthetic camera, the screen is written to a PNG, files stay local.
+# Replay a real clip instead with driver = "file" and file_path (needs `pip install -e .[replay]`).
+
+[camera]
+driver = "fake"
+lores_size = [640, 360]
+framerate = 10
+
+[display]
+driver = "png"
+png_path = "display.png"
+
+[web]
+enabled = true
+host = "127.0.0.1"
+port = 8080
+
+[publisher]
+driver = "console"
+interval_s = 30
+
+[paths]
+state_file = "run/state.json"
+data_dir = "data"

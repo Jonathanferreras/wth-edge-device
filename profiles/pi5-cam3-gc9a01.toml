@@ -1,0 +1,32 @@
+# Raspberry Pi 5 + Camera Module 3 NoIR (imx708_noir) + 1.28" GC9A01 round screen.
+# This is jf-pi-5 as wired in November 2026.
+
+[hardware]
+model_match = "Raspberry Pi 5"
+needs_spi = true
+needs_camera = true
+
+[camera]
+driver = "picamera2"
+main_size = [1280, 720]
+lores_size = [640, 360]
+lores_format = "RGB888"   # Pi 5 can give RGB on the lores stream
+framerate = 15
+af_mode = "manual"        # fixed focus at infinity: the bridge is far away
+lens_position = 0.0
+
+[display]
+driver = "gc9a01"
+spi_bus = 0
+spi_device = 0            # CE0, header pin 24
+dc_pin = 25               # header pin 22
+rst_pin = 27              # header pin 13
+spi_hz = 40_000_000       # drop to 10_000_000 if the screen shows noise
+madctl = 0x08
+
+[web]
+enabled = true
+port = 8080
+
+[publisher]
+driver = "console"

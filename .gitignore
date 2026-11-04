@@ -1,4 +1,10 @@
 .venv
 .env
 __pycache__
-wth-edge-device.service
+*.egg-info
+.pytest_cache
+# dev runtime output
+dev/run/
+dev/data/
+dev/display.png
+dev/display.png.tmp.png

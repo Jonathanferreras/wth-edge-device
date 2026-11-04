@@ -1,0 +1,24 @@
+[Unit]
+Description=Watch The Hutch edge device (camera, telemetry, web panel)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=wth
+Group=wth
+WorkingDirectory=@INSTALL_DIR@
+EnvironmentFile=-/etc/wth/secrets.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=@INSTALL_DIR@/.venv/bin/wth-edge run
+# /run/wth holds state.json for the display service; keep it across restarts.
+RuntimeDirectory=wth
+RuntimeDirectoryPreserve=yes
+RuntimeDirectoryMode=0755
+StateDirectory=wth
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target
