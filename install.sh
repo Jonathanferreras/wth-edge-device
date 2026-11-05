@@ -125,7 +125,9 @@ fi
 # ---------------------------------------------------------------- packages
 if [[ $SKIP_APT -eq 0 ]]; then
   step "Installing system packages"
-  pkgs=(git python3-venv python3-pip python3-numpy python3-pil python3-psutil fonts-dejavu-core)
+  # python3-google-auth, python3-requests: the Firestore publisher (publisher.driver = "firestore").
+  pkgs=(git python3-venv python3-pip python3-numpy python3-pil python3-psutil fonts-dejavu-core
+        python3-google-auth python3-requests)
   if [[ "$NEEDS_CAMERA" == "true" ]]; then
     # Full rpicam-apps (not -lite) brings the libav H.264 encoder.
     # python3-av: PyavOutput writes the .mp4 clips. ffmpeg: fallback remux on older picamera2.
@@ -198,6 +200,11 @@ if [[ ! -f "$SECRETS_FILE" ]] || ! grep -q '^WTH_WEB_PASSWORD=' "$SECRETS_FILE";
   } >>"$SECRETS_FILE"
 fi
 chown root:"$SERVICE_USER" "$SECRETS_FILE"; chmod 0640 "$SECRETS_FILE"
+# The Firestore service account key, if one has been copied in (see the README).
+FIREBASE_KEY="$ETC_DIR/firebase-service-account.json"
+if [[ -f "$FIREBASE_KEY" ]]; then
+  chown root:"$SERVICE_USER" "$FIREBASE_KEY"; chmod 0640 "$FIREBASE_KEY"
+fi
 
 # ---------------------------------------------------------------- python
 step "Building the Python environment"
@@ -205,7 +212,7 @@ step "Building the Python environment"
 if [[ ! -x "$INSTALL_DIR/.venv/bin/python" ]]; then
   python3 -m venv --system-site-packages "$INSTALL_DIR/.venv"
 fi
-"$INSTALL_DIR/.venv/bin/pip" install --quiet --disable-pip-version-check -e "$INSTALL_DIR"
+"$INSTALL_DIR/.venv/bin/pip" install --quiet --disable-pip-version-check -e "$INSTALL_DIR[firestore]"
 ln -sf "$INSTALL_DIR/.venv/bin/wth-edge" /usr/local/bin/wth-edge
 
 # ---------------------------------------------------------------- services
