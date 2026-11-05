@@ -1,0 +1,12 @@
+[Unit]
+Description=Watch The Hutch: update to the newest commit on the deploy branch
+Wants=network-online.target
+After=network-online.target
+# A manual `sudo wth-edge update` takes the same lock, so the two never overlap.
+
+[Service]
+Type=oneshot
+ExecStart=@INSTALL_DIR@/update.sh --auto
+# install.sh may run apt; give it time.
+TimeoutStartSec=30min
+Nice=10

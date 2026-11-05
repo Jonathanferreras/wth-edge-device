@@ -285,6 +285,20 @@ class AutoRecordSection:
 
 
 @dataclass
+class UpdateSection:
+    """Self-updates. Read by update.sh and install.sh from /etc/wth/device.toml only.
+
+    wth-update.timer checks ``branch`` on origin every 5 minutes and, when it has a new
+    commit, checks it out, re-runs install.sh and rolls back if wth-edge doesn't stay up.
+    """
+
+    auto: bool = True
+    branch: str = "deploy"
+    # How long wth-edge.service must stay up after an update before it counts.
+    health_wait_s: float = 45.0
+
+
+@dataclass
 class UiSection:
     # How the screen and web panel show temperatures: "F" or "C".
     # Telemetry data itself always stays in Celsius (cpu_temp_c).
@@ -347,6 +361,7 @@ class Config:
     opening: OpeningSection = field(default_factory=OpeningSection)
     ais: AisSection = field(default_factory=AisSection)
     autorecord: AutoRecordSection = field(default_factory=AutoRecordSection)
+    update: UpdateSection = field(default_factory=UpdateSection)
     site: SiteSection = field(default_factory=SiteSection)
     # Files that were merged, in order, for `wth-edge doctor` and logs.
     sources: list[str] = field(default_factory=list)

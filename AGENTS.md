@@ -20,5 +20,7 @@
   it to `Pipeline.process`, so `eval` can replay without them.
 - Pi-only imports (`picamera2`, `libcamera`, `spidev`, `gpiozero`) stay inside the driver that needs them, so
   everything else runs and tests on a laptop.
-- `install.sh` must stay idempotent and non-interactive.
+- `install.sh` must stay idempotent and non-interactive. `update.sh` (run by `wth-update.timer` and
+  `sudo wth-edge update`) checks out the `[update] branch` and re-runs it, so anything a new version needs
+  on the Pi (packages, units, folders) goes in `install.sh`. Never restart `wth-update.service` from it.
 - Check with `pytest` before pushing. `legacy/` is the Pi 3 code, kept for reference; don't extend it.

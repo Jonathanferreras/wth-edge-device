@@ -24,9 +24,44 @@ services. The Pi 3 version lives in [`legacy/`](legacy/) until v2 replaces it.
 4. Open the web panel at `http://<hostname>.local:8080`. The installer prints the login
    (`wth` / a generated password kept in `/etc/wth/secrets.env`).
 
-`install.sh` is safe to run again. To update later: `sudo wth-edge update` (git pull +
-reinstall). To remove: `sudo /opt/wth-edge/uninstall.sh` (add `--purge` to delete config
-and data too).
+`install.sh` is safe to run again. The Pi keeps itself up to date from the `deploy`
+branch (below); `sudo wth-edge update` does the same thing right away. To remove:
+`sudo /opt/wth-edge/uninstall.sh` (add `--purge` to delete config and data too).
+
+## Deploying: merge into `deploy`
+
+`main` is where work lands; `deploy` is what the Pi runs. To ship, merge `main` into
+`deploy` (a PR from `main` to `deploy`, or `git push origin main:deploy`). Within about
+5 minutes the Pi picks it up on its own.
+
+`wth-update.timer` runs `update.sh --auto` every 5 minutes. It fetches `deploy`, and when
+there is a new commit it checks it out, re-runs `install.sh`, and then watches
+`wth-edge.service` for 45 s. If `install.sh` fails or the service doesn't stay up, it
+checks the previous commit back out, reinstalls it, and skips the bad commit until
+`deploy` moves on. It also waits while the bridge is mid-opening or a clip is recording,
+and it refuses to touch a checkout with local edits.
+
+The Pi pulls, so nothing has to reach it through your router, and GitHub needs no
+credentials for it while the repo is public (a private repo needs a read-only deploy key
+on the Pi). The tradeoff is up to 5 minutes of delay. The `tests` workflow runs `pytest` on
+every PR; make it a required check on `deploy` in the branch protection settings so a red
+build can't be merged there.
+
+```sh
+journalctl -u wth-update          # what the updater did
+systemctl list-timers wth-update  # when it next checks
+cat /var/lib/wth/update.json      # last result (also shown by wth-edge doctor)
+sudo wth-edge update              # update now: skips the waits, always reinstalls
+```
+
+Settings in `/etc/wth/device.toml`:
+
+```toml
+[update]
+auto = true          # false: no timer; only `sudo wth-edge update`
+branch = "deploy"    # e.g. "main" for a test Pi
+health_wait_s = 45
+```
 
 ## What runs
 
@@ -34,6 +69,7 @@ and data too).
 | --- | --- | --- |
 | `wth-edge.service` | `wth-edge run` | Owns the camera (Picamera2), records clips, collects telemetry, writes `/run/wth/state.json`, serves the web panel on port 8080, hands data to the publisher. |
 | `wth-display.service` | `wth-edge display` | Plays the boot animation, then draws the round GC9A01 screen from `state.json`: the live pixel art scene, the text status, or both in turn (`display.mode`). Separate on purpose: it shows **OFFLINE** when the main app is down. |
+| `wth-update.timer` | `update.sh --auto` | Every 5 minutes: installs the newest commit on the `deploy` branch, rolls back if it breaks. |
 
 Useful commands on the Pi:
 

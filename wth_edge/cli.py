@@ -54,7 +54,7 @@ def main(argv: list[str] | None = None) -> int:
     art_p.add_argument("--out", help="write GIFs here instead of the package folder")
     sub.add_parser("doctor", help="check this Pi against its profile")
     sub.add_parser("config", help="print the merged config as JSON")
-    sub.add_parser("update", help="git pull and re-run install.sh (needs sudo)")
+    sub.add_parser("update", help="update to the newest commit on [update] branch now and re-run install.sh (needs sudo)")
     imp = sub.add_parser("import-dataset", help="import the old wth-inference-training dataset as clips")
     imp.add_argument("path", help="the dataset folder, e.g. ~/wth-inference-training/dataset")
     imp.add_argument("--data-dir", help="clip store root (default: paths.data_dir from config)")
@@ -77,10 +77,9 @@ def main(argv: list[str] | None = None) -> int:
         if os.geteuid() != 0:
             print("run with sudo: sudo wth-edge update", file=sys.stderr)
             return 1
-        owner = Path(repo).stat().st_uid
-        subprocess.run(["git", "-C", str(repo), "pull", "--ff-only"], check=True,
-                       user=owner if owner != 0 else None)
-        return subprocess.call([str(repo / "install.sh")])
+        # update.sh fetches the deploy branch, re-runs install.sh and rolls back on failure;
+        # wth-update.timer runs the same script with --auto.
+        return subprocess.call([str(repo / "update.sh")])
 
     if args.cmd == "art":
         from .display.art import scenes

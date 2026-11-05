@@ -147,6 +147,8 @@ def run_doctor(config) -> int:
             has = secrets_file.exists() and "WTH_WEB_PASSWORD=" in secrets_file.read_text()
             results.append(_line(OK if has else WARN, "web password", "set in /etc/wth/secrets.env" if has else "not set: panel is open on the LAN"))
 
+    results.append(_line(*update_check(config)))
+
     fails = [r for r in results if r[0] == FAIL]
     warns = [r for r in results if r[0] == WARN]
     print(f"\n{len(fails)} failed, {len(warns)} warnings")
@@ -159,3 +161,22 @@ def _group_exists(name: str) -> bool:
         return True
     except KeyError:
         return False
+
+
+UPDATE_STATUS_FILE = "update.json"
+
+
+def update_check(config) -> tuple[str, str, str]:
+    """The last thing update.sh did, from ``<data_dir>/update.json``."""
+    up = config.update
+    if not up.auto:
+        return OK, "auto update", f"off; `sudo wth-edge update` follows '{up.branch}'"
+    path = Path(config.paths.data_dir) / UPDATE_STATUS_FILE
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return WARN, "auto update", f"following '{up.branch}', no check yet (systemctl status wth-update.timer)"
+    result = data.get("result", "?")
+    commit = (data.get("commit") or "")[:7]
+    level = OK if result in ("updated", "up_to_date", "deferred") else WARN
+    return level, "auto update", f"'{data.get('branch', up.branch)}' at {commit or '?'}: {result}, {data.get('message', '')}"

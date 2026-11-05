@@ -1,0 +1,21 @@
+# Runs the tests on every PR and push, so a red build never reaches the deploy branch.
+# To enforce that, add a branch protection rule on `deploy` that requires the "pytest" check.
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main, deploy]
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"  # what Pi OS Bookworm ships
+          cache: pip
+      - run: pip install -e '.[dev]'
+      - run: bash -n install.sh update.sh uninstall.sh
+      - run: pytest -q

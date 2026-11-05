@@ -1,0 +1,10 @@
+[Unit]
+Description=Watch The Hutch: check the deploy branch for updates
+
+[Timer]
+OnBootSec=3min
+OnUnitInactiveSec=5min
+RandomizedDelaySec=30s
+
+[Install]
+WantedBy=timers.target

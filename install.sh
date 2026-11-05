@@ -5,7 +5,7 @@
 #   sudo git clone https://github.com/Jonathanferreras/wth-edge-device /opt/wth-edge
 #   sudo /opt/wth-edge/install.sh --profile pi5-cam3-gc9a01 --device-id hutch-01
 #
-# Safe to run again at any time (that is what `sudo wth-edge update` does). It never
+# Safe to run again at any time (update.sh runs it after checking out a new commit). It never
 # prompts, and it never overwrites /etc/wth/device.toml or secrets.env unless asked.
 set -euo pipefail
 
@@ -97,6 +97,9 @@ else
   WRITE_DEVICE_FILE=1
 fi
 
+UPDATE_AUTO="$(toml_get "$DEVICE_FILE" update.auto true)"
+UPDATE_BRANCH="$(toml_get "$DEVICE_FILE" update.branch deploy)"
+
 PROFILE_FILE="$INSTALL_DIR/profiles/$PROFILE.toml"
 [[ -f "$PROFILE_FILE" ]] || die "no profile '$PROFILE' in $INSTALL_DIR/profiles"
 [[ -f "$INSTALL_DIR/sites/$SITE.toml" ]] || die "no site '$SITE' in $INSTALL_DIR/sites"
@@ -182,6 +185,11 @@ if [[ $WRITE_DEVICE_FILE -eq 1 ]]; then
 id = "$DEVICE_ID"
 profile = "$PROFILE"
 site = "$SITE"
+
+# wth-update.timer keeps this Pi on the newest commit of this branch (see update.sh).
+[update]
+auto = true
+branch = "deploy"
 EOF
   chown root:"$SERVICE_USER" "$DEVICE_FILE"; chmod 0640 "$DEVICE_FILE"
   echo "wrote $DEVICE_FILE"
@@ -220,11 +228,24 @@ if [[ "$DISPLAY_DRIVER" == "none" && -f /etc/systemd/system/wth-display.service 
   systemctl disable --now wth-display.service || true
   rm -f /etc/systemd/system/wth-display.service
 fi
+# The updater: wth-update.timer runs update.sh --auto, which follows [update] branch.
+for unit in wth-update.service wth-update.timer; do
+  sed "s|@INSTALL_DIR@|$INSTALL_DIR|g" "$INSTALL_DIR/systemd/$unit" >"/etc/systemd/system/$unit"
+  chmod 0644 "/etc/systemd/system/$unit"
+done
 systemctl daemon-reload
 systemctl enable "${units[@]}" >/dev/null
 if [[ $NO_START -eq 0 && $REBOOT_NEEDED -eq 0 ]]; then
   systemctl restart "${units[@]}"
   sleep 4
+fi
+# Never restart wth-update.service here: install.sh may be running inside it.
+if [[ "$UPDATE_AUTO" == "true" ]]; then
+  systemctl enable --now wth-update.timer >/dev/null 2>&1
+  echo "auto update: on, following '$UPDATE_BRANCH' every 5 minutes"
+else
+  systemctl disable --now wth-update.timer >/dev/null 2>&1 || true
+  echo "auto update: off ([update] auto = false in $DEVICE_FILE)"
 fi
 
 # ---------------------------------------------------------------- check
@@ -240,6 +261,7 @@ if [[ -n "$NEW_PASSWORD" ]]; then
   echo "  login     : wth / $NEW_PASSWORD   (stored in $SECRETS_FILE)"
 fi
 echo "  logs      : journalctl -u wth-edge -f"
+echo "  updates   : journalctl -u wth-update   (sudo wth-edge update to update now)"
 if [[ $REBOOT_NEEDED -eq 1 ]]; then
   echo
   echo "SPI was just enabled. Reboot to finish: sudo reboot"
