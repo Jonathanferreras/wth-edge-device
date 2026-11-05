@@ -1,38 +1,42 @@
-"""The canal scene drawn live from the device state, so the art doubles as the status screen.
+"""The lofi canal drawn live from the device state, so the art doubles as the status screen.
 
 What each piece of telemetry looks like:
 
-* ring colour        overall status: cyan ok, amber degraded, red offline, violet starting
-* bridge             follows ``bridge.position``; lamps flash while it moves or is open
-* boat               sails through in ``boat.direction`` (w2e left to right) while one is seen
-* mallard            flaps under a "!" while the bridge isn't closed or a boat is passing
-* visor              glows while the camera is ok; dark with static when it is down
-* sun                yellow when the CPU is cool, orange then pulsing red as it heats up
-* skyline            browns out and stutters on under-voltage
-* red dot by "WTH"   recording
-* ticker             scrolls temperature, input voltage, camera fps and any warnings
-* night              the mallard sleeps (unless something is happening) and the city dims
+* ring colour        overall status: cyan ok, amber degraded, red offline, lavender starting
+* drawbridge         eases towards ``bridge.position``; the warning lamp flashes while it is up
+* wait time          the opening state machine's remaining minutes, printed above the bridge
+* traffic            cars flow over the bridge at the detector's density; they queue at the
+                     gates while the bridge is not closed; an empty bridge means unknown
+* boat               crosses the canal in ``boat.direction``; Eugene shouts "!" while it does
+* Garrison's visor   cyan while the camera is ok; red X when it is down; amber tick when hot;
+                     a scanning bar when the weather hides the bridge
+* weather            rain, downpour, fog, snow and lightning follow ``state["weather"]``
+* city               browns out and stutters on under-voltage; goes dark when offline
+* red dot            recording
+* caption            one reading at a time: temperature, voltage, camera fps, warnings
+* night              both ducks sleep (unless something is happening) and the city dims
 
 ``LiveScene.frame`` is called about ``fps`` times a second by the display service.
 """
 
 from __future__ import annotations
 
-import math
 import time
 from typing import Any
 
-from PIL import Image, ImageDraw
+from PIL import Image
 
 from ...units import c_to_f
+from . import lofi
 from . import scenes as sc
-from .kit import SIZE, c, finish, put, rect, ring, stamp, text, text_width
+from .kit import LOFI_SIZE, finish
 
 STATUS_RING = {"ok": "Q", "degraded": "Y", "offline": "R"}
 MOVING = ("opening", "closing")
-TICKER_Y = 66
 TICKER_FRAMES = 12   # each reading stays up for 1.5 s at 8 fps
-COOL_C, HOT_C = 50.0, 80.0   # sun goes from yellow to red across this range
+COOL_C, HOT_C = 50.0, 80.0
+DENSITY = {"light": 0.25, "moderate": 0.55, "heavy": 0.9}
+BOAT_W = 26
 
 
 def _heat(temp_c: float | None) -> float | None:
@@ -48,20 +52,20 @@ def _is_night(now: float, night_hours: tuple[int, int]) -> bool:
 
 
 def ticker_items(state: dict[str, Any] | None, status: str, age_s: float | None, temp_unit: str = "F") -> list[tuple[str, str]]:
-    """(text, colour) pieces for the scrolling ticker."""
+    """(text, colour) readings for the caption strip, shown one at a time."""
     if status == "offline":
-        return [("OFFLINE", "R")] + ([(f"NO UPDATE {int(age_s)}S", "G")] if age_s is not None else [])
+        return [("OFFLINE", "R")] + ([(f"NO UPDATE {int(age_s)}S", "x")] if age_s is not None else [])
     if status == "waiting" or state is None:
-        return [("STARTING", "V")]
+        return [("STARTING", "m")]
     items: list[tuple[str, str]] = []
     tel = state.get("telemetry") or {}
     if (t := tel.get("cpu_temp_c")) is not None:
         val = c_to_f(t) if temp_unit.upper() == "F" else t
-        items.append((f"{val:.0f}{temp_unit.upper()}", "R" if (_heat(t) or 0) >= 0.75 else "W"))
+        items.append((f"{val:.0f}{temp_unit.upper()}", "R" if (_heat(t) or 0) >= 0.75 else "o"))
     if (v := tel.get("input_voltage_v")) is not None:
-        items.append((f"{v:.2f}V", "W"))
+        items.append((f"{v:.2f}V", "o"))
     cam = state.get("camera") or {}
-    items.append((f"{cam.get('fps', 0):.0f}FPS", "E") if cam.get("ok") else ("CAM DOWN", "R"))
+    items.append((f"{cam.get('fps', 0):.0f}FPS", "o") if cam.get("ok") else ("CAM DOWN", "R"))
     if (tel.get("throttled") or {}).get("under_voltage_now"):
         items.append(("LOW PWR", "Y"))
     boat = state.get("boat") or {}
@@ -69,12 +73,51 @@ def ticker_items(state: dict[str, Any] | None, status: str, age_s: float | None,
         d = (boat.get("direction") or "").upper()
         items.append((f"BOAT {d[0]}-{d[-1]}" if len(d) == 3 else "BOAT", "Y"))
     pos = str((state.get("bridge") or {}).get("position", "unknown")).lower()
-    # Short labels: about 13 characters fit across the bottom of the circle.
     label = {"closed": "BRIDGE DOWN", "open": "BRIDGE OPEN", "opening": "OPENING", "closing": "CLOSING"}
-    items.append((label.get(pos, "BRIDGE ?"), "Q" if pos == "closed" else "G" if pos not in label else "Y"))
+    items.append((label.get(pos, "BRIDGE ?"), "Q" if pos == "closed" else "x" if pos not in label else "Y"))
+    if (w := weather_text(state.get("weather"))) is not None:
+        items.append(w)
     if (state.get("recording") or {}).get("recording"):
         items.append(("REC", "R"))
     return items
+
+
+def weather_text(weather: dict[str, Any] | None) -> tuple[str, str] | None:
+    """One short weather reading, or None when there is nothing worth saying."""
+    if not weather or not weather.get("ok", True):
+        return None
+    look = weather_look(weather)
+    if look["lowvis"]:
+        return (f"VIS {int(weather.get('visibility_m') or 0)}M", "Y")
+    if look["storm"]:
+        return ("STORM", "Y")
+    if look["snow"]:
+        return ("SNOW", "i")
+    if look["rain"] >= 2:
+        return ("HEAVY RAIN", "i")
+    if look["fog"] >= 0.5:
+        return ("FOG", "i")
+    return None
+
+
+def weather_look(weather: dict[str, Any] | None) -> dict[str, Any]:
+    """Map the weather sample in ``state["weather"]`` to the scene's rain, fog, snow, storm, lowvis."""
+    look: dict[str, Any] = {"rain": 1.0, "fog": 0.0, "snow": False, "storm": False, "lowvis": False}
+    if not weather or not weather.get("ok", True):
+        return look
+    kind = str(weather.get("kind") or "")
+    mm = float(weather.get("precipitation_mm") or 0.0)
+    look["rain"] = 0.0 if kind in ("clear", "cloudy", "fog") and mm < 0.1 else (2.0 if kind == "heavy_rain" or mm >= 4 else 1.0)
+    look["snow"] = kind == "snow"
+    look["storm"] = kind == "thunderstorm"
+    vis = weather.get("visibility_m")
+    if vis is not None:
+        vis = float(vis)
+        look["fog"] = max(0.0, min(1.0, (4000.0 - vis) / 3500.0))   # 4 km clear .. 500 m thick
+        look["lowvis"] = vis < float(weather.get("lowvis_below_m") or 1000.0)
+    elif kind == "fog":
+        look["fog"] = 0.8
+    return look
 
 
 class LiveScene:
@@ -83,18 +126,18 @@ class LiveScene:
         self.night_hours = night_hours
         self.t = 0
         self.lift = 0.0
-        self.boat_x = -12.0
+        self.boat_x = -float(BOAT_W)
         self.scroll = 0
 
-    def frame(self, state: dict[str, Any] | None, status: str, age_s: float | None = None,
-              now: float | None = None) -> Image.Image:
-        now = time.time() if now is None else now
-        t = self.t
-        self.t += 1
+    def look(self, state: dict[str, Any] | None, status: str, now: float) -> dict[str, Any]:
+        """Turn the device state into the scene's look (``lofi.DEFAULT`` keys)."""
         st = state or {}
         live = status not in ("offline", "waiting")
         bridge = st.get("bridge") or {}
-        pos = str(bridge.get("position", "unknown")) if live else "unknown"
+        pos = str(bridge.get("position", "unknown")).lower() if live else "unknown"
+        opening = (st.get("opening") or {}) if live else {}
+        if opening.get("position"):
+            pos = str(opening["position"]).lower()
         boat = (st.get("boat") or {}) if live else {}
         cam_ok = bool((st.get("camera") or {}).get("ok")) and live
         tel = st.get("telemetry") or {}
@@ -102,113 +145,103 @@ class LiveScene:
         brownout = bool((tel.get("throttled") or {}).get("under_voltage_now")) and live
         rec = bool((st.get("recording") or {}).get("recording")) and live
         busy = pos in ("opening", "open", "closing") or bool(boat.get("present"))
-        night = _is_night(now, self.night_hours) and not busy
+        night = _is_night(now, self.night_hours) and not busy and live
 
-        # bridge eases towards its real position, slowly while it is moving
+        # the bridge eases towards its real position, slowly while it is moving
         target = 1.0 if pos in ("opening", "open") else 0.0
         step = 0.02 if pos in MOVING else 0.08
         self.lift += max(-step, min(step, target - self.lift))
+        if abs(self.lift - target) < 1e-9:
+            self.lift = target
 
-        on_water = None
+        boat_x = None
         if boat.get("present"):
             east = str(boat.get("direction") or "w2e").lower().startswith("w")
-            self.boat_x = self.boat_x + 1.2 if self.boat_x < SIZE + 2 else -12.0
-            bx = int(self.boat_x) if east else SIZE - 11 - int(self.boat_x)
-
-            def on_water(im, bx=bx, east=east):
-                stamp(im, sc.BOAT, bx, 41, flip=not east)
+            self.boat_x = self.boat_x + 1.6 if self.boat_x < LOFI_SIZE + BOAT_W else -float(BOAT_W)
+            boat_x = self.boat_x if east else LOFI_SIZE - self.boat_x
         else:
-            self.boat_x = -12.0
+            self.boat_x = -float(BOAT_W)
 
-        lights = 0.05 if not live else (0.25 if night else 0.6)
-        img = sc.canal_scene(t, lift=self.lift, on_water=on_water, night=night or not live, heat=heat,
-                             brownout=brownout, rec=rec, lights_on=lights)
+        # traffic: the web app's rule, standstill unless the bridge is closed
+        traffic, density = "unknown", 0.5
+        levels = [str((lane or {}).get("level", "unknown")) for lane in (st.get("traffic") or {}).values()] if live else []
+        known = [lv for lv in levels if lv in DENSITY]
+        if pos != "closed" and pos != "unknown":
+            traffic = "standstill" if known else "unknown"
+        elif known:
+            traffic, density = "flowing", max(DENSITY[lv] for lv in known)
+        elif pos == "closed":
+            traffic, density = "flowing", 0.3   # bridge down and no traffic detector: light flow
 
-        lamps_flash = busy and (t // 2) % 2 == 0
-        if lamps_flash:
-            for x in (34, 76):
-                rect(img, (x - 1, 35, x + 2, 37), "Y")
+        wait = ""
+        if pos in ("opening", "open", "closing"):
+            w = opening.get("wait") or {}
+            mins = w.get("remainingMinutes")
+            if mins is not None:
+                wait = f"WAIT {max(1, round(float(mins)))}M"
 
+        look = {
+            "lift": self.lift, "boat_x": boat_x, "ring": STATUS_RING.get(status, "m"),
+            "cam_ok": cam_ok, "hot": (heat or 0) >= 0.75, "brownout": brownout, "rec": rec,
+            "night": night, "offline": not live and status == "offline",
+            "traffic": traffic, "density": density, "wait": wait,
+        }
+        look.update(weather_look(st.get("weather")) if live else {"rain": 0.0})
         if night:
-            bob = 1 if (t // 10) % 2 else 0
-            sc._duck(img, sc.MALLARD_SLEEP, t // 3, bob, camera_ok=cam_ok)
-            for k in range(3):
-                phase = (t + k * 13) % 40
-                zx = sc.DUCK_X + 12 + int(4 * math.sin(phase / 5)) + phase // 6
-                zy = 52 - phase
-                if 6 < zy < 50:
-                    stamp(img, sc.Z if phase < 26 else sc.Z.replace("Q", "V"), zx, zy)
-        elif busy:
-            hop = (0, 2, 3, 2)[t % 4] if t % 8 < 4 else 0
-            sc._duck(img, sc.MALLARD, t, -hop, x=sc.DUCK_X + 2, camera_ok=cam_ok)
-            if t % 2 == 0:
-                stamp(img, sc.WING, sc.DUCK_X + 10, sc.DUCK_WATERLINE - sc.MALLARD.h - 3 - hop)
-            bob = 1 if (t // 3) % 2 else 0
-            bx0, by0 = sc.DUCK_X + 22, 36 + bob - hop
-            rect(img, (bx0, by0, bx0 + 7, by0 + 9), "K")
-            ImageDraw.Draw(img).rectangle((bx0, by0, bx0 + 6, by0 + 8), outline=c("F"))
-            rect(img, (bx0 + 3, by0 + 2, bx0 + 4, by0 + 5), "Y")
-            put(img, bx0 + 3, by0 + 6, "Y")
-        else:
-            cycle = t % 48
-            sprite = sc.MALLARD
-            if cycle in (10, 11, 34):
-                sprite = sc.MALLARD_BLINK
-            elif cycle in (18, 20):
-                sprite = sc.MALLARD_QUACK
-            elif 38 <= cycle <= 43:
-                sprite = sc.MALLARD_DABBLE
-            sc._duck(img, sprite, t, 1 if (t // 4) % 2 else 0, camera_ok=cam_ok)
+            look["rain"] = min(look["rain"], 1.0)
+        return look
 
-        sc.rain(img, t, n=12 if night else 26, color="V" if night else "Q")
-        self._ticker(img, ticker_items(state, status, age_s, self.temp_unit))
-        ring_col = STATUS_RING.get(status, "V")
-        ring(img, ring_col, 2)
-        if busy and (t // 2) % 2 == 0:
-            ring(img, "F", 1)
-        if brownout and t % 9 == 4:
-            img = sc.glitch(img, t, 3)
+    def frame(self, state: dict[str, Any] | None, status: str, age_s: float | None = None,
+              now: float | None = None) -> Image.Image:
+        now = time.time() if now is None else now
+        t = self.t
+        self.t += 1
+        look = self.look(state, status, now)
+        items = ticker_items(state, status, age_s, self.temp_unit)
+        if items:
+            k, _phase = divmod(self.scroll, TICKER_FRAMES)
+            self.scroll += 1
+            look["label"], look["label_color"] = items[k % len(items)]
+        img = lofi.draw(t, look)
+        busy = look["lift"] > 0 or look["boat_x"] is not None
+        sc.rim(img, ("F" if (t // 2) % 2 else look["ring"]) if busy else look["ring"])
         return sc.scanlines(finish(img))
-
-    def _ticker(self, img: Image.Image, items: list[tuple[str, str]]) -> None:
-        """One reading at a time, centred on a neon strip, sliding up into place."""
-        rect(img, (0, TICKER_Y, SIZE, TICKER_Y + 8), "K")
-        for x in range(0, SIZE, 2):
-            put(img, x, TICKER_Y, "F")
-        if not items:
-            return
-        k, phase = divmod(self.scroll, TICKER_FRAMES)
-        self.scroll += 1
-        s, col = items[k % len(items)]
-        rise = max(0, 3 - phase)  # slide up over the first few frames
-        text(img, s, (SIZE - text_width(s)) // 2, TICKER_Y + 2 + rise, col)
 
 
 # ---------------------------------------------------------------- demo states, for previews
 def _demo(**over) -> dict[str, Any]:
-    st = {
+    st: dict[str, Any] = {
         "status": "ok",
         "camera": {"ok": True, "fps": 14.9},
         "telemetry": {"cpu_temp_c": 52.0, "input_voltage_v": 5.08, "throttled": {"under_voltage_now": False}},
         "bridge": {"position": "closed"},
+        "traffic": {"northbound": {"level": "moderate"}, "southbound": {"level": "light"}},
         "boat": {"present": False, "direction": None},
         "recording": {"recording": False},
+        "weather": {"ok": True, "kind": "rain", "precipitation_mm": 0.6, "visibility_m": 9000},
     }
     for k, v in over.items():
-        st[k] = {**st[k], **v} if isinstance(st.get(k), dict) else v
+        st[k] = {**st[k], **v} if isinstance(st.get(k), dict) and isinstance(v, dict) else v
     return st
 
 
 DEMOS: dict[str, tuple[dict[str, Any] | None, str, float | None, int]] = {
     # name: (state, overall status, state age, local hour)
     "live-ok": (_demo(), "ok", 1.0, 14),
-    "live-boat": (_demo(bridge={"position": "open"}, boat={"present": True, "direction": "w2e"},
+    "live-boat": (_demo(bridge={"position": "open"},
+                        opening={"position": "open", "wait": {"remainingMinutes": 3.6}},
+                        boat={"present": True, "direction": "w2e"},
                         recording={"recording": True}), "ok", 1.0, 14),
+    "live-heavy-traffic": (_demo(traffic={"northbound": {"level": "heavy"}, "southbound": {"level": "heavy"}}), "ok", 1.0, 17),
     "live-hot-lowpower": (_demo(status="degraded", telemetry={"cpu_temp_c": 82.0, "input_voltage_v": 4.71,
                                                               "throttled": {"under_voltage_now": True}}),
                           "degraded", 1.0, 14),
     "live-camera-down": (_demo(status="degraded", camera={"ok": False, "fps": 0}), "degraded", 1.0, 14),
-    "live-night": (_demo(), "ok", 1.0, 23),
+    "live-fog": (_demo(weather={"kind": "fog", "precipitation_mm": 0.0, "visibility_m": 600}), "ok", 1.0, 9),
+    "live-downpour": (_demo(weather={"kind": "heavy_rain", "precipitation_mm": 7.0, "visibility_m": 3000}), "ok", 1.0, 14),
+    "live-snow": (_demo(weather={"kind": "snow", "precipitation_mm": 1.0, "visibility_m": 5000}), "ok", 1.0, 14),
+    "live-storm": (_demo(weather={"kind": "thunderstorm", "precipitation_mm": 5.0, "visibility_m": 2500}), "ok", 1.0, 14),
+    "live-night": (_demo(weather={"kind": "clear", "precipitation_mm": 0.0, "visibility_m": 20000}), "ok", 1.0, 23),
     "live-offline": (_demo(), "offline", 95.0, 14),
 }
 

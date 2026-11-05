@@ -43,6 +43,16 @@ class Device:
             from .ais import AisSource
 
             self.ais = AisSource(config.ais, config.site.bridge_lat, config.site.bridge_lon)
+        self.weather = None
+        if config.weather.enabled:
+            from .weather import WeatherSource
+
+            lat = config.weather.lat or config.site.bridge_lat
+            lon = config.weather.lon or config.site.bridge_lon
+            if lat or lon:
+                self.weather = WeatherSource(config.weather, lat, lon)
+            else:
+                log.warning("weather off: set site.bridge_lat/bridge_lon (or weather.lat/lon)")
         if config.detectors.enabled and config.camera.driver == "fake":
             log.info("detectors off: the test-pattern camera would only trigger false events")
         elif config.detectors.enabled:
@@ -128,10 +138,13 @@ class Device:
                 break
             health = self.camera.health()
             ais = self.ais.snapshot() if self.ais is not None and self.detectors is None else None
+            weather = self.weather.snapshot() if self.weather is not None else None
             with self._lock:
                 self._state["camera"] = health.as_dict()
                 if ais is not None:
                     self._state["ais"] = ais
+                if weather is not None:
+                    self._state["weather"] = weather
                 self._state["publisher"] = self.publisher.status()
                 rec = self.recorder.status()
                 self._state["recording"] = {k: rec[k] for k in ("available", "recording", "label", "elapsed_s", "trigger")}
@@ -188,6 +201,8 @@ class Device:
         self.camera.start()
         if self.ais is not None:
             self.ais.start()
+        if self.weather is not None:
+            self.weather.start()
         if self.detectors is not None:
             self.detectors.start()
         self._spawn(self._state_loop, "state")
@@ -205,6 +220,8 @@ class Device:
         self.camera.stop()
         if self.ais is not None:
             self.ais.stop()
+        if self.weather is not None:
+            self.weather.stop()
         for t in self._threads:
             t.join(timeout=3)
         self.publisher.close()

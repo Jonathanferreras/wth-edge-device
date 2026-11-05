@@ -25,6 +25,10 @@ spi_hz = 40_000_000       # drop to 10_000_000 if the screen shows noise
 madctl = 0x08
 mode = "alternate"        # "art" (live pixel art with telemetry), "status" (text), or both in turn
 
+[weather]
+enabled = true            # Open-Meteo, no key; needs site.bridge_lat / bridge_lon. Drawn into the art.
+interval_s = 900
+
 [web]
 enabled = true
 port = 8080

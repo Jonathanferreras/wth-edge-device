@@ -11,11 +11,12 @@ from functools import lru_cache
 
 from PIL import Image, ImageDraw
 
-SIZE = 80           # art pixels across the circle
-SCALE = 3           # 80 * 3 = 240, the GC9A01 panel
-PANEL = SIZE * SCALE
+PANEL = 240         # the GC9A01 panel
+SIZE = 80           # art pixels across the circle for the chunky 3x sprites
+SCALE = PANEL // SIZE
+LOFI_SIZE = 120     # the lofi canal scene is drawn at 2x (see lofi.py)
 
-# One 26 colour palette for every scene. Sprite strings use these letters; "." is transparent.
+# One palette for every scene. Sprite strings use these letters; "." is transparent.
 # Navy, copper, green, amber and red are the same colours as the status screen.
 PALETTE: dict[str, tuple[int, int, int]] = {
     "K": (14, 12, 24),      # outline / near black
@@ -45,6 +46,27 @@ PALETTE: dict[str, tuple[int, int, int]] = {
     "U": (44, 18, 74),      # deep purple
     "u": (20, 8, 36),       # night purple
     "H": (26, 168, 88),     # mallard green
+    # lofi canal (muted teals, wet asphalt, neon)
+    "a": (9, 20, 32),       # deepest teal / sky at the top
+    "d": (16, 38, 56),      # dark teal (far towers, shadow faces)
+    "f": (26, 62, 84),      # mid teal (buildings)
+    "h": (44, 96, 120),     # light teal (lit edges, fog)
+    "i": (84, 150, 170),    # pale teal (rain, highlights)
+    "j": (30, 40, 66),      # slate (coat, car cabin)
+    "k": (54, 70, 104),     # light slate (coat lit side, car body)
+    "l": (255, 120, 200),   # soft pink neon
+    "m": (150, 90, 220),    # lavender neon
+    "o": (120, 230, 200),   # mint neon
+    "p": (12, 70, 50),      # dark mallard green
+    "r": (36, 34, 50),      # wet asphalt
+    "t": (58, 56, 80),      # wet asphalt, lit
+    "w": (200, 70, 70),     # tail light red
+    "x": (120, 130, 150),   # shearling collar / concrete
+    "z": (18, 16, 28),      # trousers / deep shadow
+    "y": (34, 30, 48),      # trousers, lit
+    "v": (34, 48, 44),      # canal water
+    "A": (58, 78, 70),      # canal water, lit
+    "T": (255, 235, 150),   # warm window light
 }
 
 Color = tuple[int, int, int]
@@ -141,7 +163,7 @@ def text(img: Image.Image, s: str, x: int, y: int, color: str = "W", scale: int 
 
 
 # ---------------------------------------------------------------- fills
-_BAYER = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]]
+BAYER = [[0, 8, 2, 10], [12, 4, 14, 6], [3, 11, 1, 9], [15, 7, 13, 5]]
 
 
 def dither_rect(img: Image.Image, box: tuple[int, int, int, int], a: str, b: str, amount: float) -> None:
@@ -150,7 +172,7 @@ def dither_rect(img: Image.Image, box: tuple[int, int, int, int], a: str, b: str
     x0, y0, x1, y1 = box
     for y in range(max(0, y0), min(img.height, y1)):
         for x in range(max(0, x0), min(img.width, x1)):
-            px[x, y] = c(b) if _BAYER[y % 4][x % 4] < amount * 16 else c(a)
+            px[x, y] = c(b) if BAYER[y % 4][x % 4] < amount * 16 else c(a)
 
 
 def vgradient(img: Image.Image, y0: int, y1: int, a: str, b: str) -> None:
@@ -191,8 +213,12 @@ def ring(img: Image.Image, color: str, width: int = 2, frac: float = 1.0, start_
                     px[x, y] = c(color)
 
 
-def finish(img: Image.Image, scale: int = SCALE) -> Image.Image:
-    """Mask to the round panel (outside the circle goes black) and scale up to 240x240."""
+def finish(img: Image.Image, scale: int | None = None) -> Image.Image:
+    """Mask to the round panel (outside the circle goes black) and scale up to 240x240.
+
+    The scale follows the canvas: an 80 px canvas is scaled 3x, a 120 px canvas 2x.
+    """
+    scale = scale or PANEL // img.width
     mask = _circle(img.width, 0.0)
     out = img.copy()
     px = out.load()

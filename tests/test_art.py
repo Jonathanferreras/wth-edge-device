@@ -23,7 +23,7 @@ def test_every_scene_renders_and_bundled_gifs_exist():
     for name, fn in scenes.SCENES.items():
         frames, durs, _loop = fn()
         assert frames and len(frames) == len(durs), name
-        assert all(f.size == (kit.SIZE, kit.SIZE) for f in frames)
+        assert all(f.size == (kit.LOFI_SIZE, kit.LOFI_SIZE) for f in frames)
         big = kit.finish(frames[0])
         assert big.size == (240, 240)
         assert big.getpixel((0, 0)) == (0, 0, 0)  # outside the circle is masked
@@ -52,6 +52,27 @@ def test_play_respects_loops_and_stop():
     stop = threading.Event()
     stop.set()
     assert play(FakeDisplay(), anim, loops=0, stop=stop) == 0
+
+
+def test_finish_scales_80_and_120_canvases_to_the_panel():
+    assert kit.finish(Image.new("RGB", (80, 80))).size == (240, 240)
+    assert kit.finish(Image.new("RGB", (120, 120))).size == (240, 240)
+
+
+def test_lofi_scene_states_draw_and_differ():
+    from wth_edge.display.art import lofi
+
+    base = lofi.draw(3)
+    assert base.size == (kit.LOFI_SIZE, kit.LOFI_SIZE)
+    looks = [{"lift": 1.0, "traffic": "standstill", "wait": "WAIT 4M"}, {"boat_x": 40}, {"night": True},
+             {"fog": 0.9, "lowvis": True}, {"snow": True}, {"offline": True},
+             {"cam_ok": False}, {"brownout": True, "hot": True, "rec": True}, {"traffic": "unknown"}]
+    seen = {base.tobytes()}
+    for look in looks:
+        img = lofi.draw(3, look)
+        assert img.tobytes() not in seen, look
+        seen.add(img.tobytes())
+    assert lofi.draw(12, {"storm": True}).tobytes() != lofi.draw(12).tobytes()  # lightning fires every 12 ticks
 
 
 def test_sprites_only_use_the_palette():
@@ -94,6 +115,27 @@ def test_ticker_items_follow_telemetry():
     boat = [t for t, _ in ticker_items(DEMOS["live-boat"][0], "ok", 1.0)]
     assert "BOAT W-E" in boat and "BRIDGE OPEN" in boat and "REC" in boat
     assert ticker_items(None, "offline", 40.0)[0][0] == "OFFLINE"
+    fog = [t for t, _ in ticker_items(DEMOS["live-fog"][0], "ok", 1.0)]
+    assert "VIS 600M" in fog
+
+
+def test_live_look_follows_state_and_weather():
+    from wth_edge.display.art.live import DEMOS, LiveScene, weather_look
+
+    scene = LiveScene()
+    noon = 1_700_000_000.0
+    ok = scene.look(DEMOS["live-ok"][0], "ok", noon)
+    assert ok["traffic"] == "flowing" and ok["density"] == 0.55 and ok["wait"] == "" and ok["rain"] == 1.0
+    scene.lift = 1.0
+    boat = scene.look(DEMOS["live-boat"][0], "ok", noon)
+    assert boat["traffic"] == "standstill" and boat["wait"] == "WAIT 4M" and boat["boat_x"] is not None
+    assert boat["rec"] and boat["lift"] == 1.0
+    off = LiveScene().look(DEMOS["live-offline"][0], "offline", noon)
+    assert off["offline"] and off["traffic"] == "unknown" and off["ring"] == "R"
+    fog = weather_look({"ok": True, "kind": "fog", "precipitation_mm": 0.0, "visibility_m": 600})
+    assert fog["lowvis"] and fog["fog"] > 0.9 and fog["rain"] == 0
+    assert weather_look({"ok": True, "kind": "heavy_rain", "precipitation_mm": 7.0})["rain"] == 2
+    assert weather_look({"ok": False})["rain"] == 1.0 and not weather_look(None)["lowvis"]
 
 
 def test_bridge_eases_to_its_real_position():
