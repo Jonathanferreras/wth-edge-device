@@ -20,6 +20,7 @@ from .autorecord import AutoRecorder
 from .camera import FrameBus, make_camera
 from .clips import ClipStore
 from .publishers import make_publisher
+from .publishers.policy import BridgeStatePolicy
 from .recording import Recorder
 from .state import new_state, write_state
 
@@ -74,7 +75,8 @@ class Device:
         self._threads: list[threading.Thread] = []
         self.server = None  # uvicorn server, when the web panel runs
         self.exit_code = 0
-        self._last_website: dict[str, Any] | None = None
+        pc = config.publisher
+        self._bridge_policy = BridgeStatePolicy(pc.traffic_hold_s, pc.min_interval_s, pc.heartbeat_s, pc.withhold)
 
     @staticmethod
     def _opening_defaults(cfg) -> dict[str, float]:
@@ -111,16 +113,12 @@ class Device:
                 log.exception("publisher %s failed", self.publisher.name)
         website = (st.get("opening") or {}).get("website")
         if website is not None:
-            # Publish the website fields when they change, with the wait time rounded so a
-            # countdown doesn't publish every second.
-            key = {k: (round(v, 1) if isinstance(v, float) else v) for k, v in website.items()}
-            if key.get("estimatedWaitTime"):
-                key["estimatedWaitTime"] = {k: v for k, v in key["estimatedWaitTime"].items()
-                                            if k not in ("estimatedTotalMinutes", "remainingMinutes")}
-            if key != self._last_website:
-                self._last_website = key
+            # The policy decides which changes are worth a write (positions at once, traffic
+            # once it holds, a heartbeat every few minutes); see publishers/policy.py.
+            out = self._bridge_policy.offer(time.time(), website)
+            if out is not None:
                 try:
-                    self.publisher.publish_bridge_state(self.config.device.id, website)
+                    self.publisher.publish_bridge_state(self.config.device.id, out)
                 except Exception:
                     self.publisher.ok = False
                     log.exception("publisher %s failed", self.publisher.name)

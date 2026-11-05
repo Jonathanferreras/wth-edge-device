@@ -147,6 +147,9 @@ def run_doctor(config) -> int:
             has = secrets_file.exists() and "WTH_WEB_PASSWORD=" in secrets_file.read_text()
             results.append(_line(OK if has else WARN, "web password", "set in /etc/wth/secrets.env" if has else "not set: panel is open on the LAN"))
 
+    if config.publisher.driver == "firestore":
+        results.append(_firestore_check(config.publisher))
+
     fails = [r for r in results if r[0] == FAIL]
     warns = [r for r in results if r[0] == WARN]
     print(f"\n{len(fails)} failed, {len(warns)} warnings")
@@ -159,3 +162,26 @@ def _group_exists(name: str) -> bool:
         return True
     except KeyError:
         return False
+
+
+def _firestore_check(pc) -> tuple[str, str, str]:
+    """Reads bridgeState/current once with the service account, which proves key and project."""
+    from .publishers.firestore import FirestorePublisher
+
+    key = Path(pc.credentials_file)
+    if not key.exists():
+        return _line(FAIL, "firestore", f"no service account key at {key} (Firebase console > Project settings > Service accounts)")
+    try:
+        import google.auth  # noqa: F401
+        import requests  # noqa: F401
+    except ImportError:
+        return _line(FAIL, "firestore", "google-auth / requests missing; rerun install.sh")
+    pub = FirestorePublisher(pc, start=False)
+    if not pub.project:
+        return _line(FAIL, "firestore", "no project id: set publisher.project_id")
+    try:
+        writable = pub._may_write_state(0.0)
+    except Exception as exc:
+        return _line(FAIL, "firestore", f"project {pub.project}: {type(exc).__name__}: {exc}")
+    return _line(OK if writable else WARN, "firestore",
+                 f"project {pub.project} reachable" + ("" if writable else "; an admin override is on (acceptsDeviceUpdates false)"))

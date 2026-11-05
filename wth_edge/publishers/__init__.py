@@ -1,7 +1,8 @@
 """Where device data goes. Detectors and telemetry only talk to a Publisher.
 
-Only ``console`` exists in this first step. A ``firestore`` publisher (writing
-``bridgeState/current``, ``events`` and ``devices/{id}``) comes with the backend phase.
+``console`` logs each publish; ``firestore`` (``publishers/firestore.py``) writes the web
+app's ``bridgeState/current``, ``events``, ``deviceEvents`` and ``devices/{id}``. Which
+bridge states are worth publishing is decided before this, in ``publishers/policy.py``.
 """
 
 from __future__ import annotations
@@ -64,4 +65,8 @@ def make_publisher(cfg) -> Publisher:
     driver = cfg.driver.lower()
     if driver == "console":
         return ConsolePublisher()
-    raise ValueError(f"unknown publisher.driver {cfg.driver!r} (only 'console' so far)")
+    if driver == "firestore":
+        from .firestore import FirestorePublisher
+
+        return FirestorePublisher(cfg)
+    raise ValueError(f"unknown publisher.driver {cfg.driver!r} (console or firestore)")

@@ -223,13 +223,24 @@ async function tick() {
       ["Uptime", fmt.up(t.uptime_s)],
       ["Model", t.model || "–"],
       ["IP", (t.ip || []).join(", ") || "–"],
-      ["Publisher", s.publisher?.driver || "–"],
+      ["Publisher", pubText(s.publisher), s.publisher?.ok === false ? "bad" : s.publisher?.held_by_admin ? "warn" : ""],
     ];
     $("tel").innerHTML = rows.map(([k, v, c]) => `<dt>${k}</dt><dd class="${c || ""}">${esc(v)}</dd>`).join("");
     $("auth").textContent = s.auth_enabled ? "" : "No WTH_WEB_PASSWORD set: this panel is open to anyone on the network.";
   } catch (e) {
     $("status").textContent = "unreachable"; $("status").className = "pill offline";
   }
+}
+
+function pubText(p) {
+  if (!p) return "–";
+  let t = p.driver;
+  if (p.driver === "firestore") {
+    t += p.ok === false ? ` · failing: ${p.error || "?"}` : p.ok ? " · ok" : " · waiting";
+    if (p.held_by_admin) t += " · admin override";
+    if (p.writes_today != null) t += ` · ${p.writes_today} writes today`;
+  }
+  return t;
 }
 
 // ---------------- recording

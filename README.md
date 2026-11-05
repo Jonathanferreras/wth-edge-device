@@ -116,8 +116,8 @@ Each phase maps to the website's fields with its invariants built in: `position`
 whenever the bridge is not closed) and `estimatedWaitTime` (only while opening, open or
 closing). The wait is the median of past openings per phase, from
 `<data_dir>/openings.json`, with the defaults in `[opening]` until the device has seen a
-few. The console publisher logs `bridge_state` whenever those fields change; the Firestore
-publisher will write them to `bridgeState/current`.
+few. The publisher sends those fields out as described in
+[Publishing to Firestore](#publishing-to-firestore).
 
 The camera sees boats approaching from the east well and from the west barely
 (`site.approach_sides`), so a missing boat on the blind side never counts against an
@@ -156,6 +156,58 @@ old camera was zoomed differently. The state machine stays in `flowing` on every
 (no false gates-down), but the old clips are too short to learn a lane's background, so
 the traffic levels there are only indicative. Clips recorded by v2 carry their own ROIs in
 `clip.json`, so `eval` on those is the real benchmark.
+
+## Publishing to Firestore
+
+With `[publisher] driver = "firestore"` the Pi writes straight to the web app's Firestore, so
+the website follows the camera. What it writes:
+
+| Document | When | Holds |
+| --- | --- | --- |
+| `bridgeState/current` | A new position at once; a new traffic level once it has held 60 s (`traffic_hold_s`); the unchanged state every 10 min (`heartbeat_s`) | The website fields with `sourceType: "device"`, `sourceId` = the device id, server `updatedAt` |
+| `events/{id}` | Each change of position or traffic | The same shape the admin form writes |
+| `deviceEvents/{id}` | Phase changes and boat crossings | The state machine event |
+| `devices/{id}` | Every `interval_s` (300 in the Pi profiles) | Telemetry and a server `lastSeenAt` |
+
+Confidences and the wait countdown never cause a write on their own (the website counts down
+from `startedAt` itself), because every write to `bridgeState/current` also costs one read
+per open browser tab. Expect a few hundred writes a day against Firestore's free 20,000.
+
+**Admin override.** When an admin saves a state from the website's dashboard it sets
+`acceptsDeviceUpdates` to `false`. The Pi then stops writing `bridgeState/current` (events
+and telemetry still go), checks again every `override_check_s` (60), and resumes with its
+latest state once the dashboard's **Hand back to device** sets it to `true`.
+
+**Not trusted yet?** `withhold = ["traffic"]` (or `"wait"`, `"position"`) sends that field as
+unknown until its detector passes the accuracy gate.
+
+Writes go through one background thread, so a slow network never stalls the detectors. When
+Firestore or the Wi-Fi is down it keeps the latest state, telemetry and up to 500 events and
+retries with a backoff of up to 5 minutes. The panel's telemetry card shows the publisher's
+health, the override and today's write count.
+
+Set it up:
+
+1. Firebase console > Project settings > Service accounts > **Generate new private key**.
+2. Copy the JSON to the Pi and lock it down:
+
+   ```sh
+   scp key.json pi@hutch.local:/tmp/
+   sudo mv /tmp/key.json /etc/wth/firebase-service-account.json
+   sudo chown root:wth /etc/wth/firebase-service-account.json && sudo chmod 0640 /etc/wth/firebase-service-account.json
+   ```
+
+3. Add to `/etc/wth/device.toml`, then `sudo systemctl restart wth-edge`:
+
+   ```toml
+   [publisher]
+   driver = "firestore"
+   ```
+
+4. `wth-edge doctor` reads `bridgeState/current` once to check the key and project.
+
+The service account bypasses Firestore security rules, so the rules (in the web app's
+`firestore.rules`) can keep the browser read-only for everyone but signed-in admins.
 
 ## Recording clips
 
@@ -292,11 +344,12 @@ coordinates the source stays off with a warning in the log.
 ## Status
 
 Done: install script, profiles, camera service with health checks, status screen,
-telemetry, a console publisher, the web panel (live view, telemetry, map), manual recording
+telemetry, console and Firestore publishers, the web panel (live view, telemetry, map), manual recording
 with pre-roll, the clip browser, drag-to-adjust ROIs, dataset import and replay, leaf,
 traffic and boat detectors, the opening state machine with wait estimates, the AIS feed,
 auto-recording with detection logs, and `eval`.
 
-Next, per the plan: the Firestore publisher, then H.264 streaming through MediaMTX. The
+Next, per the plan: the accuracy gate (shadow mode, labels, scoring), the daily rollup in
+Firestore, then H.264 streaming through MediaMTX. The
 bridge detector is the weak spot; once the Pi has collected labelled clips, a small
 classifier on the bridge box should replace the Hough angle.

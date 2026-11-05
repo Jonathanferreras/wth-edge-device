@@ -109,9 +109,24 @@ class WebSection:
 
 @dataclass
 class PublisherSection:
-    # Only "console" exists so far. "firestore" comes with the backend phase.
+    # "console" logs one JSON line per publish; "firestore" writes to the web app's Firestore.
     driver: str = "console"
+    # How often telemetry goes out (devices/{id} in Firestore).
     interval_s: float = 60.0
+    # bridgeState/current: a new position goes out at once; a traffic level only after it has
+    # held this long, so a lane flickering between two levels doesn't spend writes and reads.
+    traffic_hold_s: float = 60.0
+    # No two bridge state writes closer than this, except for a position change.
+    min_interval_s: float = 30.0
+    # Rewrite the unchanged state this often so the website can tell the device is alive.
+    heartbeat_s: float = 600.0
+    # Fields to send as unknown until their detector is trusted: "traffic", "wait", "position".
+    withhold: tuple[str, ...] = ()
+    # Firestore: service account key (JSON) and project. project_id defaults to the key's.
+    credentials_file: str = "/etc/wth/firebase-service-account.json"
+    project_id: str = ""
+    # While an admin has taken over (acceptsDeviceUpdates false), check again this often.
+    override_check_s: float = 60.0
 
 
 @dataclass

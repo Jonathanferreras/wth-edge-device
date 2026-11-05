@@ -22,4 +22,7 @@ port = 8080
 preview_fps = 4
 
 [publisher]
+# Switch to "firestore" in /etc/wth/device.toml once the service account key is on the Pi.
 driver = "console"
+# Telemetry to devices/{id} every 5 minutes: 288 Firestore writes a day.
+interval_s = 300
