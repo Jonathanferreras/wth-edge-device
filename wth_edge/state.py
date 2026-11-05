@@ -38,6 +38,7 @@ def new_state(device_id: str, version: str) -> dict[str, Any]:
         "opening": None,
         # Vessels from AIS, when configured.
         "ais": None,
+        "weather": None,
         "detector": None,
         "telemetry": {},
         "publisher": {"driver": None, "ok": None, "last_publish_at": None},

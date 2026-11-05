@@ -255,6 +255,22 @@ class OpeningSection:
 
 
 @dataclass
+class WeatherSection:
+    """Local weather from Open-Meteo (free, no key) for the screen and for visibility checks.
+
+    The location is the site's ``bridge_lat``/``bridge_lon``; set ``lat``/``lon`` here to override.
+    """
+
+    enabled: bool = False
+    interval_s: float = 900.0
+    timeout_s: float = 10.0
+    lat: float = 0.0
+    lon: float = 0.0
+    # Visibility below this (metres) is flagged in the state as too low for the bridge detector.
+    lowvis_below_m: float = 1000.0
+
+
+@dataclass
 class AisSection:
     """Vessel positions from AIS, so boats are known before the camera sees them.
 
@@ -346,6 +362,7 @@ class Config:
     traffic_detector: TrafficDetectorSection = field(default_factory=TrafficDetectorSection)
     opening: OpeningSection = field(default_factory=OpeningSection)
     ais: AisSection = field(default_factory=AisSection)
+    weather: WeatherSection = field(default_factory=WeatherSection)
     autorecord: AutoRecordSection = field(default_factory=AutoRecordSection)
     site: SiteSection = field(default_factory=SiteSection)
     # Files that were merged, in order, for `wth-edge doctor` and logs.
