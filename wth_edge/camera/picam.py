@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import subprocess
 import time
+from fractions import Fraction
 from pathlib import Path
 
 import numpy as np
@@ -158,7 +159,9 @@ class PiClipWriter:
             from picamera2.platform import Platform, get_platform  # type: ignore[import-not-found]
 
             if get_platform() == Platform.PISP and hasattr(encoders, "LibavH264Encoder"):
-                encoder = encoders.LibavH264Encoder(bitrate=rcfg.bitrate, iperiod=iperiod, framerate=fps)
+                # PyAV 14 wants an int or Fraction for the stream rate; a float fails in add_stream.
+                rate = Fraction(fps).limit_denominator(1000)
+                encoder = encoders.LibavH264Encoder(bitrate=rcfg.bitrate, iperiod=iperiod, framerate=rate)
         except ImportError:
             pass
         if encoder is None:
