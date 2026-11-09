@@ -77,7 +77,8 @@ Profiles today:
   *fill* is how much differs from a slowly learned background (cars present, moving or
   not). Each lane gets the web app's level: `light` / `moderate` / `heavy` from the fill
   while traffic moves, `standstill` when the lane is filled and nothing moves for 8 s. The
-  deck only reports clear or busy. The panel shows live flow and fill per lane so the
+  deck only reports clear or busy: clear when both lanes are at a standstill, or when no
+  car has crossed it (no movement, no moving car box) for 5 s (`deck_clear_s`). The panel shows live flow and fill per lane so the
   thresholds in `[traffic_detector]` can be tuned on the real view.
 - **Boats** (`boat`, plus `boat_near` for the river close to the camera; each box has its
   own motion gate; the model runs on the boxes that just moved or hold the crossing, and
