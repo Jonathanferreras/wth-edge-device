@@ -254,8 +254,11 @@ class QueueReviewer:
     deferred = True
     poll_s = 5.0
 
+    give_up_s = 1200.0  # stop waiting when the review timer hasn't checked in for this long
+
     def __init__(self, tcfg, data_dir: str | Path) -> None:
         self.tcfg = tcfg
+        self.data_dir = data_dir
         self.qdir = queue_dir(data_dir)
         self.batches: list[Path] = []
         self.runs = self.input_tokens = self.output_tokens = 0
@@ -280,11 +283,17 @@ class QueueReviewer:
         """Wait (up to ``review_wait_s``) for the batches, then put the labels on the samples
         and clear the batches out of the queue."""
         deadline = time.time() + self.tcfg.review_wait_s
+        last_ok = time.time()
         while self.batches and not should_stop() and time.time() < deadline:
             n, finished = self.progress()
             if on_progress:
                 on_progress(n)
             if finished:
+                break
+            if available(self.data_dir)[0] or n:
+                last_ok = time.time()
+            elif time.time() - last_ok > self.give_up_s:
+                log.warning("tune: the Claude Code review timer isn't running; not waiting for labels")
                 break
             time.sleep(self.poll_s)
         labels: dict[str, Any] = {}
