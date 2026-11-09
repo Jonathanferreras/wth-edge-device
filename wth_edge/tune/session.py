@@ -259,7 +259,9 @@ class Tuner:
         self._write(rdir, report)
         ok, why = review.available(tcfg, self.config.paths.data_dir)
         reviewer = None
-        if ok:
+        # Claude Code works from a queue, so frames can wait for it: queue them even if its timer
+        # hasn't checked in yet (say, a tune started right after a restart) and check again at the end.
+        if ok or tcfg.reviewer == "claude-code":
             try:
                 reviewer = review.make_reviewer(tcfg, self.config.paths.data_dir)
             except Exception as exc:
@@ -287,6 +289,7 @@ class Tuner:
             self._set(message="Waiting for Claude Code to review the frames")
             reviewer.collect([s for r in records for s in r["samples"]], self._abort.is_set,
                              lambda n: self._set(reviewed=n))
+            ok, why = review.available(tcfg, self.config.paths.data_dir)
 
         metas = [m for m in (self.store.read_meta(c) for c in clip_ids) if m]
         samples = [s for r in records for s in r["samples"]]
@@ -301,7 +304,7 @@ class Tuner:
         labelled = sum(1 for s in samples if s.get("label"))
         if self._abort.is_set():
             decision = "Stopped before the analysis finished, so nothing was changed."
-        elif reviewer is None:
+        elif reviewer is None or (labelled == 0 and not ok):
             decision = f"Not tuned: no review ({why})."
         elif labelled < 10:
             decision = f"Not tuned: only {labelled} moments were reviewed, too few to go on."
@@ -345,7 +348,8 @@ class Tuner:
             "ended_at": time.time(),
             "recorded_s": round(recorded, 1),
             "chunks": len(clip_ids),
-            "reviewer": {"ok": reviewer is not None, "why": why, **(reviewer.usage() if reviewer else {})},
+            "reviewer": {"ok": reviewer is not None and (ok or labelled > 0), "why": why,
+                         **(reviewer.usage() if reviewer else {})},
             "reviewed": labelled,
             "moments": len(samples),
             "counts": self._counts(counts, metas),

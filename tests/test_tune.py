@@ -426,3 +426,54 @@ def test_round_with_claude_code_reviewer(tmp_path, monkeypatch):
     assert r["reviewed"] == r["moments"] >= 5
     assert r["reviewer"]["model"].startswith("Claude Code") and r["reviewer"]["calls"] >= 1
     assert r["accuracy"]["live"]["fields"]["northbound"]["accuracy"] == 0.0
+
+
+def test_round_waits_for_a_claude_code_timer_that_checks_in_late(tmp_path, monkeypatch):
+    """A tune started right after a restart, before the review timer's first run, still gets reviewed."""
+    import threading
+
+    from wth_edge.tune import claude_code, session
+
+    cfg = make_cfg(tmp_path, chunk_s=12, duration_s=24, reviewer="claude-code", review_wait_s=30)
+    store = ClipStore(tmp_path)
+    tuner = session.Tuner(cfg, FakeRecorder(store, ROIS), store)
+    tuner.recover()
+    assert claude_code.available(tmp_path)[0] is False  # no heartbeat yet
+    monkeypatch.setattr(claude_code.QueueReviewer, "poll_s", 0.05)
+    tuner._wait = lambda s: None
+    stop = threading.Event()
+
+    def timer():
+        stop.wait(0.3)  # checks in after the round has started
+        while not stop.is_set():
+            claude_code.review_pending(cfg.tune, tmp_path, claude="claude", run=FakeClaude())
+            stop.wait(0.05)
+
+    t = threading.Thread(target=timer)
+    t.start()
+    try:
+        tuner._round("20261109T190000Z", 1, 24.0)
+    finally:
+        stop.set()
+        t.join()
+    r = tuner.report(tuner.reports()[0]["id"])
+    assert r["reviewer"]["ok"] is True
+    assert r["reviewed"] == r["moments"] >= 5
+    assert not list(claude_code.queue_dir(tmp_path).glob("*__*.json"))
+
+
+def test_round_gives_up_when_the_claude_code_timer_never_runs(tmp_path, monkeypatch):
+    from wth_edge.tune import claude_code, session
+
+    cfg = make_cfg(tmp_path, chunk_s=12, duration_s=24, reviewer="claude-code", review_wait_s=30)
+    store = ClipStore(tmp_path)
+    tuner = session.Tuner(cfg, FakeRecorder(store, ROIS), store)
+    tuner.recover()
+    monkeypatch.setattr(claude_code.QueueReviewer, "poll_s", 0.05)
+    monkeypatch.setattr(claude_code.QueueReviewer, "give_up_s", 0.2)
+    tuner._wait = lambda s: None
+    tuner._round("20261109T190000Z", 1, 24.0)
+    r = tuner.report(tuner.reports()[0]["id"])
+    assert r["reviewer"]["ok"] is False and r["reviewed"] == 0
+    assert r["decision"].startswith("Not tuned: no review")
+    assert not list(claude_code.queue_dir(tmp_path).glob("*__*.json"))
