@@ -38,3 +38,33 @@ def test_password_required_when_set(monkeypatch):
     assert client.get("/api/state", auth=("wth", "wrong")).status_code == 401
     assert client.get("/api/state", auth=("wth", "s3cret")).status_code == 200
     assert client.get("/healthz").status_code == 200  # open for doctor
+
+
+def test_roi_zoom(monkeypatch):
+    client, bus = make_client(monkeypatch)
+    assert client.get("/roi/boat.jpg").status_code == 503
+    assert client.get("/roi/nope.jpg").status_code == 404
+    assert client.get("/stream.mjpg?roi=nope").status_code == 404
+    bus.publish(np.zeros((90, 160, 3), dtype=np.uint8))
+    r = client.get("/roi/boat.jpg")
+    assert r.status_code == 200 and r.content[:2] == b"\xff\xd8"
+    import io
+
+    from PIL import Image
+    assert Image.open(io.BytesIO(r.content)).size == (80, 18)  # 0.5 x 0.2 of 160 x 90
+
+
+def test_roi_zoom_crops_hires_yuv():
+    from wth_edge.camera.base import Frame, HiRes
+    from wth_edge.config import Roi
+    from wth_edge.web.app import crop_roi
+
+    w, h = 640, 360
+    yuv = np.zeros((h * 3 // 2, w), dtype=np.uint8)
+    yuv[:h, w // 2:] = 235  # right half of the luma plane bright
+    yuv[h:] = 128  # neutral chroma
+    frame = Frame(1, 0.0, np.zeros((90, 160, 3), dtype=np.uint8), HiRes(yuv, "yuv420", (w, h)))
+    left = crop_roi(frame, Roi(0.0, 0.0, 0.4, 0.5))
+    right = crop_roi(frame, Roi(0.6, 0.5, 0.4, 0.5))
+    assert left.shape == (180, 256, 3) and right.shape == (180, 256, 3)
+    assert left.mean() < 30 and right.mean() > 200

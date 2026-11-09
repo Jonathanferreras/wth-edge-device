@@ -20,6 +20,7 @@ from typing import Any, Callable
 from fastapi import Body, Depends, FastAPI, HTTPException, Request, status
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
+import numpy as np
 from PIL import Image, ImageDraw
 
 from ..camera import FrameBus
@@ -31,14 +32,58 @@ DETECT_COLOUR = (239, 68, 68)
 ROI_COLOURS = [(33, 209, 159), (250, 204, 21), (96, 165, 250), (244, 114, 182), (167, 139, 250), (251, 146, 60), (45, 212, 191)]
 
 
-def encode_jpeg(image, quality: int, rois: dict | None = None, det: dict | None = None) -> bytes:
-    """JPEG of a frame; with ``rois`` draws the boxes, with ``det`` what the detectors see."""
+ROI_ZOOM_MAX_WIDTH = 1280
+
+
+def crop_roi(frame, roi: Roi) -> np.ndarray:
+    """The ROI cut out of a frame, from the full-resolution image when there is one.
+
+    For a YUV420 hires frame only the cropped planes are converted, so a zoomed view
+    costs about as much as the box is big, not the whole sensor frame.
+    """
+    hires = frame.hires
+    if hires is None:
+        x1, y1, x2, y2 = roi.to_pixels(frame.image.shape[1], frame.image.shape[0])
+        return frame.image[y1:max(y2, y1 + 1), x1:max(x2, x1 + 1)]
+    w, h = hires.size
+    x1, y1, x2, y2 = roi.to_pixels(w, h)
+    if hires.kind == "yuv420" and hires.data.shape[1] == w and h % 2 == 0 and w % 2 == 0:
+        # I420 wants an even width and a height that's a multiple of 4.
+        x1, y1 = x1 & ~1, y1 & ~3
+        cw, ch = max(2, (x2 - x1) & ~1), max(4, (y2 - y1) & ~3)
+        cw, ch = min(cw, w - x1), min(ch, h - y1)
+        if cw >= 2 and ch >= 4 and cw % 2 == 0 and ch % 4 == 0:
+            import cv2
+
+            d = hires.data
+            y = d[y1:y1 + ch, x1:x1 + cw]
+            u = d[h:h + h // 4].reshape(h // 2, w // 2)[y1 // 2:(y1 + ch) // 2, x1 // 2:(x1 + cw) // 2]
+            v = d[h + h // 4:h + h // 2].reshape(h // 2, w // 2)[y1 // 2:(y1 + ch) // 2, x1 // 2:(x1 + cw) // 2]
+            i420 = np.concatenate([y.reshape(-1), u.reshape(-1), v.reshape(-1)]).reshape(ch * 3 // 2, cw)
+            return cv2.cvtColor(i420, cv2.COLOR_YUV2RGB_I420)
+    return hires.rgb()[y1:max(y2, y1 + 1), x1:max(x2, x1 + 1)]
+
+
+def encode_roi_jpeg(frame, roi: Roi, quality: int) -> bytes:
+    img = Image.fromarray(np.ascontiguousarray(crop_roi(frame, roi)))
+    if img.width > ROI_ZOOM_MAX_WIDTH:
+        img = img.resize((ROI_ZOOM_MAX_WIDTH, max(1, round(img.height * ROI_ZOOM_MAX_WIDTH / img.width))))
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=quality)
+    return buf.getvalue()
+
+
+def encode_jpeg(image, quality: int, rois: dict | None = None, det: dict | None = None,
+                only: str | None = None) -> bytes:
+    """JPEG of a frame; with ``rois`` draws the boxes (just ``only`` when given), with ``det`` what the detectors see."""
     img = Image.fromarray(image)
     if rois or det:
         img = img.convert("RGB")
         d = ImageDraw.Draw(img)
         W, H = img.width, img.height
         for i, (name, roi) in enumerate((rois or {}).items()):
+            if only and name != only:
+                continue
             box = roi.to_pixels(W, H)
             colour = ROI_COLOURS[i % len(ROI_COLOURS)]
             d.rectangle(box, outline=colour, width=2)
@@ -103,15 +148,24 @@ def create_app(config, bus: FrameBus, get_state: Callable[[], dict[str, Any]], r
         return JSONResponse(st)
 
     @app.get("/snapshot.jpg", dependencies=[Depends(auth)])
-    def snapshot(overlay: int = 1) -> Response:
+    def snapshot(overlay: int = 1, only: str | None = None) -> Response:
         frame = bus.latest()
         if frame is None:
             raise HTTPException(503, "no camera frame yet")
         return Response(encode_jpeg(frame.image, wcfg.jpeg_quality, rois if overlay else None,
-                                    get_state() if overlay else None), media_type="image/jpeg")
+                                    get_state() if overlay else None, only), media_type="image/jpeg")
+
+    def need_roi(name: str) -> Roi:
+        if name not in rois:
+            raise HTTPException(404, f"unknown ROI {name!r}")
+        return rois[name]
 
     @app.get("/stream.mjpg", dependencies=[Depends(auth)])
-    async def stream(request: Request, overlay: int = 1) -> StreamingResponse:
+    async def stream(request: Request, overlay: int = 1, only: str | None = None,
+                     roi: str | None = None) -> StreamingResponse:
+        """The live view; ``roi`` streams that box zoomed in instead, ``only`` draws just that box."""
+        if roi is not None:
+            need_roi(roi)
         period = 1.0 / max(wcfg.preview_fps, 0.5)
 
         async def frames():
@@ -121,8 +175,11 @@ def create_app(config, bus: FrameBus, get_state: Callable[[], dict[str, Any]], r
                 frame = bus.latest()
                 if frame is not None and frame.seq != last_seq:
                     last_seq = frame.seq
-                    jpg = await asyncio.to_thread(encode_jpeg, frame.image, wcfg.jpeg_quality,
-                                                  rois if overlay else None, get_state() if overlay else None)
+                    if roi is not None:
+                        jpg = await asyncio.to_thread(encode_roi_jpeg, frame, rois[roi], wcfg.jpeg_quality)
+                    else:
+                        jpg = await asyncio.to_thread(encode_jpeg, frame.image, wcfg.jpeg_quality,
+                                                      rois if overlay else None, get_state() if overlay else None, only)
                     yield (
                         f"--{BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: {len(jpg)}\r\n\r\n".encode()
                         + jpg
@@ -131,6 +188,14 @@ def create_app(config, bus: FrameBus, get_state: Callable[[], dict[str, Any]], r
                 await asyncio.sleep(max(0.0, period - (time.monotonic() - t0)))
 
         return StreamingResponse(frames(), media_type=f"multipart/x-mixed-replace; boundary={BOUNDARY}")
+
+    @app.get("/roi/{name}.jpg", dependencies=[Depends(auth)])
+    def roi_snapshot(name: str) -> Response:
+        box = need_roi(name)
+        frame = bus.latest()
+        if frame is None:
+            raise HTTPException(503, "no camera frame yet")
+        return Response(encode_roi_jpeg(frame, box, wcfg.jpeg_quality), media_type="image/jpeg")
 
     # ---- recording ----
     def need_recorder():
