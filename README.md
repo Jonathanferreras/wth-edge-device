@@ -176,7 +176,7 @@ deck, phase, the boat box and direction, the nearest AIS vessel, once a second, 
 event), to use as draft labels. Events also go to the publisher.
 
 Settings: `[detectors]`, `[bridge_detector]`, `[traffic_detector]`, `[boat_detector]`,
-`[opening]`, `[ais]`, `[weather]`, `[autorecord]` (see `wth_edge/config.py` for every knob).
+`[opening]`, `[ais]`, `[weather]`, `[autorecord]`, `[tune]` (see `wth_edge/config.py` for every knob).
 
 ### Checking the detectors against recorded clips
 
@@ -198,6 +198,46 @@ old camera was zoomed differently. The state machine stays in `flowing` on every
 (no false gates-down), but the old clips are too short to learn a lane's background, so
 the traffic levels there are only indicative. Clips recorded by v2 carry their own ROIs in
 `clip.json`, so `eval` on those is the real benchmark.
+
+### Self-tuning
+
+The **Self-tune** switch on the panel runs the loop `wth_edge/tune/` implements: record,
+check what the detector said against what was really there, tune, report, delete the video.
+
+1. **Record** for the time picked next to the switch (1 hour by default, `[tune] duration_s`)
+   in 5-minute chunks (`chunk_s`), as ordinary clips with trigger `tune`. The live detector
+   runs as usual and logs its readings into each chunk. Auto-recording stands aside.
+2. **Review**, while the next chunk records, at low priority:
+   - the reference pass runs the YOLO model over the lanes 2 times a second and the river
+     every 2 s, and counts cars per direction and boat crossings;
+   - every 15 s, and wherever the detector's reading changed, it saves two frames 2 s apart
+     with the boxes drawn on. Claude labels each lane (empty, moving, stopped, and how
+     full), the deck (clear or cars), the leaves (down or raised) and boats.
+3. **Tune.** It scores the detector's log against the labels, fits `flow_min`,
+   `present_min`, `moderate_min`, `heavy_min`, `deck_clear_max` and the leaf angles to them
+   (at most halving or doubling a value per round), and replays the recording with the old
+   and the new settings. New settings are kept only if the replay improves by `min_gain`.
+   They apply at once and go to `<data_dir>/tuning.toml`; **Reset tuning** on the panel (or
+   deleting that file and restarting) undoes them.
+4. **Report** under **Self-tune reports**: cars each way, boats (reference vs detector),
+   openings, standstills, accuracy per signal, the settings changed, and the frames where
+   the detector and Claude disagreed. The recorded video is then deleted
+   (`keep_footage = true` keeps it); only those frames stay.
+
+While accuracy is under `target_accuracy` (90%) and the last round's changes helped, it
+records another round, up to `max_rounds` (3). Turning the switch off while recording
+ends the recording and still analyses what was recorded; turning it off during the
+analysis abandons it. A restart mid-round marks the round interrupted and deletes its video.
+
+Why 5-minute chunks: each one is reviewed while the next records, so the report is ready
+soon after the hour; a crash loses at most 5 minutes; and the replay stitches the chunks
+back into one timeline, so an opening across a chunk boundary still reads as one.
+
+The review needs an API key: put `ANTHROPIC_API_KEY=...` in `/etc/wth/secrets.env` and
+restart. Without one it still records, counts and reports, but doesn't tune. Each moment is
+one request with two images, so an hour (`max_reviews` = 360 moments) is roughly 1M input
+tokens; the model is `[tune] model` (Claude Opus 5.5 by default, at low effort). It needs
+recording to be on and about 2 GB free for an hour of video.
 
 ## Publishing to Firestore
 
