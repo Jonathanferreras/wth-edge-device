@@ -79,7 +79,9 @@ Profiles today:
   while traffic moves, `standstill` when the lane is filled and nothing moves for 8 s. The
   deck only reports clear or busy. The panel shows live flow and fill per lane so the
   thresholds in `[traffic_detector]` can be tuned on the real view.
-- **Boats**: background subtraction in the boat box wakes YOLOv8s (`models/yolov8s.onnx`,
+- **Boats** (`boat`, plus `boat_near` for the river close to the camera; each box has its
+  own motion gate and model run, and the best sighting feeds one crossing tracker):
+  background subtraction in the boat boxes wakes YOLOv8s (`models/yolov8s.onnx`,
   COCO class `boat`, run through OpenCV, no PyTorch). The model also runs every 2 s when
   nothing moves, because a slow tug blends into the background. Two hits start a
   crossing; the direction locks once the boat has moved 3% of the frame width; the

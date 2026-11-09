@@ -29,6 +29,14 @@ y = 0.61
 w = 0.76   # to the right edge: the whole visible path of a boat
 h = 0.21
 
+# The river close to the camera, below and right of the main boat box. A second box rather
+# than a taller "boat" box, so the trees in the lower left stay out of the motion gate.
+[site.rois.boat_near]
+x = 0.68
+y = 0.80
+w = 0.32
+h = 0.13
+
 # Lanes and deck for the traffic detector and the opening state machine. Rough placement
 # from the bridge box; drag them into place in the panel ("Adjust boxes").
 #   northbound: the approach lanes that drive away from the camera, up to their gate

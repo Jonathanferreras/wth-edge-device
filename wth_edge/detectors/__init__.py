@@ -34,6 +34,15 @@ def opencv_available() -> bool:
 LANES = ("northbound", "southbound")
 # Leaf boxes: "bridge" is the near leaf (the old single box), "far_leaf" the other one.
 LEAVES = {"bridge": "near", "far_leaf": "far"}
+# Boat boxes: "boat" is the channel and the river beyond, "boat_near" the stretch of river
+# close to the camera that the main box can't cover without taking in the trees. Each gets
+# its own motion gate and model run; the best sighting of the frame feeds one tracker.
+BOAT_ROIS = ("boat", "boat_near")
+
+
+def _best(sightings):
+    found = [s for s in sightings if s is not None]
+    return max(found, key=lambda s: s.confidence) if found else None
 
 
 class Pipeline:
@@ -56,7 +65,7 @@ class Pipeline:
         self.deck = DeckTracker(tcfg) if tcfg.enabled else None
         self.stages = StageMachine(config.stages) if config.stages.enabled else None
         self.machine = OpeningMachine(config.opening, bcfg, config.site.approach_sides, history) if config.opening.enabled else None
-        self.motion = MotionGate(boat) if boat.enabled else None
+        self.motion = {name: MotionGate(boat) for name in BOAT_ROIS} if boat.enabled else {}
         self.yolo = None
         self.yolo_error: str | None = None
         if boat.enabled and boat.confirm == "yolo":
@@ -108,11 +117,12 @@ class Pipeline:
                 changed = self.lanes[name].update(t, reading)
                 if changed:
                     events.append({"type": "traffic", "at": t, "direction": name, "level": changed, "previous": before})
-        if self.boats is not None and "boat" in rois:
+        boat_rois = [name for name in BOAT_ROIS if name in rois]
+        if self.boats is not None and boat_rois:
             cfg = self.config.boat_detector
-            # The motion gate is cheap and keeps learning the river in every stage, so it
-            # doesn't fire on a stale background when the watch starts.
-            moving = self.motion.update(frame, rois["boat"]) if self.motion else None
+            # The motion gates are cheap and keep learning the river in every stage, so they
+            # don't fire on a stale background when the watch starts.
+            moving = _best(self.motion[name].update(frame, rois[name]) for name in boat_rois)
             if moving is not None:
                 self._last_motion_at = t
             if not boats_on:
@@ -126,7 +136,7 @@ class Pipeline:
                 if hz > 0 and t - self._last_yolo >= 1.0 / hz:
                     self._last_yolo = t
                     src = hires.rgb() if hires is not None else frame
-                    events += self.boats.update(t, self.yolo.detect(src, rois["boat"]))
+                    events += self.boats.update(t, _best(self.yolo.detect(src, rois[name]) for name in boat_rois))
                 else:
                     events += self.boats.tick(t)
             else:

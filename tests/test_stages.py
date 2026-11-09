@@ -161,3 +161,27 @@ def test_stages_off_measures_everything():
     cfg = cfgmod.from_dict({"stages": {"enabled": False}, "boat_detector": {"enabled": False}})
     pipe = Pipeline(cfg)
     assert pipe.stages is None and pipe.state()["stage"] is None
+
+
+def test_boat_seen_in_the_near_box_only():
+    cv2 = pytest.importorskip("cv2")
+    from wth_edge.detectors import Pipeline
+
+    cfg = cfgmod.from_dict({
+        "boat_detector": {"confirm": "motion"},
+        "site": {"rois": {"boat": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.3},
+                          "boat_near": {"x": 0.5, "y": 0.7, "w": 0.5, "h": 0.3}}},
+    })
+    pipe = Pipeline(cfg)
+    h, w = 360, 640
+    events = []
+    for i in range(60):
+        img = np.full((h, w, 3), 40, np.uint8)
+        if i >= 20:  # a boat moving right through the near box only
+            x = 330 + (i - 20) * 6
+            cv2.rectangle(img, (x, 290), (x + 40, 320), (220, 220, 220), -1)
+        events += pipe.process(i * 0.2, img)
+    started = [e for e in events if e["type"] == "boat_started"]
+    assert started and started[0]["direction"] == "w2e"
+    box = pipe.state()["boat"]["box"]
+    assert box is not None and box[1] >= 0.7  # the sighting came from boat_near
