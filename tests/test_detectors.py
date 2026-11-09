@@ -161,7 +161,10 @@ def test_pipeline_bridge_from_hires_and_overlay_state():
         hi = HiRes(cv2.cvtColor(g, cv2.COLOR_GRAY2RGB), "rgb", (1280, 720))
         lores = cv2.resize(hi.rgb(), (640, 360))
         events += pipe.process(i * 0.2, lores, hi)
-    assert events and events[0]["type"] == "bridge" and events[0]["position"] == "closed"
+    # No lane boxes: nothing to gate on, so the pipeline watches the bridge straight away.
+    assert events and events[0]["type"] == "stage" and events[0]["stage"] == "watch"
+    bridge = [e for e in events if e["type"] == "bridge"]
+    assert bridge and bridge[0]["position"] == "closed"
     s = pipe.state()
     assert s["bridge"]["line"] is not None and s["boat"]["present"] is False
 

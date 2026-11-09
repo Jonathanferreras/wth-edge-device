@@ -239,6 +239,30 @@ class TrafficDetectorSection:
 
 
 @dataclass
+class StagesSection:
+    """Staged attention: which detectors run, so the device doesn't check everything at once.
+
+    traffic (lanes and deck only) -> watch (plus leaves and boats) -> track (the bridge is
+    moving: leaves and boat at full rate). See ``wth_edge/detectors/stages.py``.
+    ``enabled = false`` runs every detector on every frame, as before.
+    """
+
+    enabled: bool = True
+    # traffic -> watch: no lane moving (both stopped, or unreadable) for this long.
+    stopped_s: float = 15.0
+    # watch -> traffic: no leaf movement for this long...
+    quiet_s: float = 30.0
+    # ...or this long after the last boat sighting (camera or AIS), whichever is later.
+    boat_quiet_s: float = 120.0
+    # watch -> traffic: cars moving in either direction for this long.
+    resume_s: float = 5.0
+    # track -> watch: all leaves flat for this long.
+    flat_s: float = 5.0
+    # track -> watch: no leaf readable for this long.
+    lost_s: float = 30.0
+
+
+@dataclass
 class OpeningSection:
     """The bridge opening state machine (see docs: Bridge opening state machine).
 
@@ -376,6 +400,7 @@ class Config:
     boat_detector: BoatDetectorSection = field(default_factory=BoatDetectorSection)
     traffic_detector: TrafficDetectorSection = field(default_factory=TrafficDetectorSection)
     opening: OpeningSection = field(default_factory=OpeningSection)
+    stages: StagesSection = field(default_factory=StagesSection)
     ais: AisSection = field(default_factory=AisSection)
     weather: WeatherSection = field(default_factory=WeatherSection)
     autorecord: AutoRecordSection = field(default_factory=AutoRecordSection)

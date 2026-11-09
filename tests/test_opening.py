@@ -246,6 +246,7 @@ def test_pipeline_builds_signals_from_lanes_and_leaves():
     cfg = cfgmod.from_dict({
         "boat_detector": {"enabled": False},
         "traffic_detector": {"standstill_s": 2, "hold_s": 1, "window_s": 2},
+        "stages": {"enabled": False},  # every detector on every frame; test_stages covers the staged flow
         "site": {"rois": {"bridge": {"x": 0.3, "y": 0.3, "w": 0.4, "h": 0.5},
                           "northbound": {"x": 0.0, "y": 0.8, "w": 0.2, "h": 0.2},
                           "southbound": {"x": 0.8, "y": 0.8, "w": 0.2, "h": 0.2},

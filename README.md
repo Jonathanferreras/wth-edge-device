@@ -90,6 +90,35 @@ Profiles today:
   it and an ETA. The panel plots them on a map; `wth-edge ais` prints them in a terminal.
   A local RTL-SDR receiver can feed the same table later.
 
+### Stages: what gets looked at when
+
+The detectors don't all run all the time. `wth_edge/detectors/stages.py` picks what to
+measure, starting from traffic, which is the cheapest and earliest sign of an opening:
+
+```
+traffic --(no lane moving 15 s)--> watch --(a leaf moving or up)--> track
+   ^                                 |  ^                              |
+   +--(cars moving 5 s, or no leaf --+  +----(all leaves flat 5 s)-----+
+       movement for 30 s)
+```
+
+1. **traffic**: only the lane and deck boxes. Once neither direction has moved for 15 s
+   (or the lanes can't be read), the device starts watching the bridge.
+2. **watch**: the leaves and the boat model too. A leaf opening (or already up) moves on
+   to `track`. Cars moving again, or 30 s without leaf movement, goes back to `traffic`,
+   so a red light or a crash bounces between the two. A boat (camera or AIS) keeps the
+   watch going until 2 minutes after the last sighting.
+3. **track**: the bridge is moving. Leaves every frame and the boat model at its full
+   rate, so the boat's path is followed while it is in view. All leaves flat for 5 s goes
+   back to `watch`, and from there cars moving goes back to `traffic`.
+
+Without lane boxes there is nothing to gate on, so the pipeline stays in `watch`/`track`.
+The boat motion gate keeps learning the river in every stage (it is cheap) so the watch
+doesn't start on a stale background; boats under a closed bridge with traffic flowing
+are not tracked. All times are in `[stages]`; `enabled = false` runs every detector on
+every frame as before (handy for `wth-edge eval` on boat-only clips). The panel shows the
+stage, why it was entered and the countdown back to `traffic`.
+
 ### The state machine
 
 `wth_edge/opening.py` turns those signals into one phase, following the design doc
