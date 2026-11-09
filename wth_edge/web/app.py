@@ -143,7 +143,8 @@ def encode_jpeg(image, quality: int, rois: dict | None = None, det: dict | None 
     return buf.getvalue()
 
 
-def create_app(config, bus: FrameBus, get_state: Callable[[], dict[str, Any]], recorder=None, store=None) -> FastAPI:
+def create_app(config, bus: FrameBus, get_state: Callable[[], dict[str, Any]], recorder=None, store=None,
+               tuner=None) -> FastAPI:
     app = FastAPI(title="Watch The Hutch device", docs_url=None, redoc_url=None, openapi_url=None)
     password = os.environ.get("WTH_WEB_PASSWORD", "")
     basic = HTTPBasic(auto_error=False)
@@ -320,6 +321,56 @@ def create_app(config, bus: FrameBus, get_state: Callable[[], dict[str, Any]], r
         if not need_store().delete(clip_id):
             raise HTTPException(404, "no such clip")
         return {"deleted": clip_id}
+
+    # ---- self-tuning ----
+    def need_tuner():
+        if tuner is None:
+            raise HTTPException(404, "self-tuning is not set up")
+        return tuner
+
+    @app.get("/api/tune", dependencies=[Depends(auth)])
+    def tune_status() -> dict:
+        t = need_tuner()
+        return {**t.status(), "reports": t.reports()[:20]}
+
+    @app.post("/api/tune/start", dependencies=[Depends(auth)])
+    def tune_start(body: dict = Body(default={})) -> dict:
+        from ..tune.session import TuneError
+
+        minutes = body.get("minutes")
+        try:
+            minutes = float(minutes) if minutes not in (None, "") else None
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(400, "minutes must be a number") from exc
+        try:
+            return need_tuner().start(minutes)
+        except TuneError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.post("/api/tune/stop", dependencies=[Depends(auth)])
+    def tune_stop() -> dict:
+        return need_tuner().stop()
+
+    @app.post("/api/tune/reset", dependencies=[Depends(auth)])
+    def tune_reset() -> dict:
+        t = need_tuner()
+        if t.status().get("active"):
+            raise HTTPException(409, "self-tuning is running; turn it off first")
+        return {"undone": t.reset_tuning()}
+
+    @app.get("/api/tune/reports/{rid}", dependencies=[Depends(auth)])
+    def tune_report(rid: str) -> dict:
+        r = need_tuner().report(rid)
+        if r is None:
+            raise HTTPException(404, "no such report")
+        return r
+
+    @app.get("/tune/{rid}/{name}", dependencies=[Depends(auth)])
+    def tune_frame(rid: str, name: str) -> FileResponse:
+        path = need_tuner().frame_path(rid, name)
+        if path is None:
+            raise HTTPException(404, "no such frame")
+        return FileResponse(path, media_type="image/jpeg")
 
     # ---- ROIs ----
     @app.put("/api/rois", dependencies=[Depends(auth)])

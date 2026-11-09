@@ -170,8 +170,45 @@
   dialog::backdrop { background: rgba(0, 0, 0, .7); }
   dialog .toolbar { margin-top: 12px; }
 
+
+  /* ---------- self-tune */
+  .switchrow { display: flex; align-items: center; gap: 14px; }
+  .switchrow .txt { flex: 1; min-width: 0; }
+  .switchrow .t { font-size: 17px; font-weight: 600; }
+  .switchrow .s { color: var(--quiet); font-size: 13px; }
+  .switch { position: relative; width: 51px; height: 31px; border-radius: 999px; border: 0; background: var(--tile-2); flex: none; padding: 0; }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px; border-radius: 50%; background: #fff; box-shadow: 0 2px 4px rgba(0, 0, 0, .3); }
+  .switch[aria-checked="true"] { background: var(--ok); }
+  .switch[aria-checked="true"]::after { left: 22px; }
+  .tune-fields { display: flex; gap: 8px; margin-top: 14px; align-items: center; color: var(--quiet); font-size: 14px; }
+  .bar { height: 6px; border-radius: 999px; background: var(--tile-2); overflow: hidden; margin-top: 12px; }
+  .bar > span { display: block; height: 100%; background: var(--ok); width: 0; }
+  .tuned { display: grid; gap: 4px; margin-top: 12px; font-size: 13px; color: var(--quiet); }
+  .tuned b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .reports { display: grid; gap: 8px; }
+  .rep { display: flex; gap: 12px; align-items: center; width: 100%; text-align: left; background: var(--tile); border: 1px solid transparent; border-radius: var(--r-sm); padding: 12px 14px; color: var(--ink); }
+  .rep:hover { background: var(--tile-2); }
+  .rep[aria-expanded="true"] { border-color: var(--line-2); }
+  .rep .when { font-weight: 600; white-space: nowrap; }
+  .rep .what { color: var(--quiet); font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .rep .pct { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .repbody { display: grid; gap: 16px; padding: 16px 2px 6px; }
+  .repbody h3 { margin: 0 0 8px; font-size: 15px; font-weight: 700; }
+  table.acc { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+  table.acc th { text-align: left; color: var(--quiet); font-weight: 600; font-size: 12px; letter-spacing: .06em; text-transform: uppercase; padding: 6px 8px; border-bottom: 1px solid var(--line-2); }
+  table.acc td { padding: 7px 8px; border-bottom: 1px solid var(--line); text-transform: none; }
+  table.acc td:first-child { text-transform: capitalize; }
+  .misses { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+  .miss { background: var(--tile); border-radius: var(--r-sm); overflow: hidden; border: 0; padding: 0; text-align: left; color: var(--ink); }
+  .miss img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; background: #000; }
+  .miss .meta { padding: 8px 10px 10px; font-size: 13px; display: grid; gap: 2px; }
+  .miss .meta .s { color: var(--quiet); }
+  #framedlg img { width: 100%; display: block; border-radius: var(--r-sm); }
+  #framedlg .pair { display: grid; gap: 8px; }
+
   @media (prefers-reduced-motion: no-preference) {
     .tab, .btn, .reading, .seg button { transition: background-color .15s, color .15s; }
+    .switch, .switch::after, .bar > span { transition: background-color .2s, left .2s, width .4s; }
   }
 </style>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
@@ -265,6 +302,24 @@
       <div class="note" id="recnote"></div>
     </section>
 
+
+    <section class="card" id="tunecard">
+      <div class="card-head"><h2>Self-tune</h2><span class="sub" id="tuneline"></span></div>
+      <div class="switchrow">
+        <div class="txt"><div class="t" id="tunetitle">Off</div><div class="s" id="tunesub">Records, has Claude review the footage, and tunes the detector</div></div>
+        <button class="switch" id="tuneswitch" role="switch" aria-checked="false" aria-labelledby="tunetitle" disabled></button>
+      </div>
+      <div class="tune-fields" id="tunefields">
+        <label for="tunemins">Record for</label>
+        <select class="field" id="tunemins">
+          <option value="15">15 min</option><option value="30">30 min</option><option value="60" selected>1 hour</option><option value="120">2 hours</option>
+        </select>
+      </div>
+      <div class="bar" id="tunebar" hidden><span id="tunebarfill"></span></div>
+      <div class="note" id="tunenote" style="margin-top:10px"></div>
+      <div class="tuned" id="tuned" hidden></div>
+    </section>
+
     <section class="card">
       <div class="card-head"><h2>Telemetry</h2><span class="sub" id="telsub"></span></div>
       <dl id="tel"></dl>
@@ -323,6 +378,11 @@
       </div>
     </section>
 
+    <section id="tunesec" hidden>
+      <div class="sechead" style="margin-bottom:12px"><h2>Self-tune reports</h2><span id="tunecount"></span></div>
+      <div class="panel"><div class="reports" id="reports"></div></div>
+    </section>
+
     <section id="clipsec">
       <div class="sechead" style="margin-bottom:12px"><h2>Clips</h2><span id="clipcount"></span></div>
       <div class="panel">
@@ -332,6 +392,7 @@
     </section>
   </div>
 </main>
+<dialog id="framedlg"><div class="pair" id="framepair"></div><div class="toolbar"><span id="frametitle"></span><button class="btn" id="closeframe" style="margin-left:auto">Close</button></div></dialog>
 <dialog id="player"><video id="video" controls playsinline></video><div class="toolbar"><span id="playtitle"></span><button class="btn" id="closeplayer" style="margin-left:auto">Close</button></div></dialog>
 <script>
 const $ = (id) => document.getElementById(id);
@@ -608,12 +669,12 @@ async function recTick() {
     sel.innerHTML = `<option value="">No label</option>` + rec.labels.map((l) => `<option value="${esc(l)}">${esc(l)}</option>`).join("");
   }
   const on = !!rec?.recording;
-  $("recbtn").disabled = !rec?.available;
+  $("recbtn").disabled = !rec?.available || !!rec?.reserved_by; // self-tune owns the recorder
   $("recbtn").classList.toggle("on", on);
   $("rectitle").textContent = on ? "Stop recording" : "Start recording";
   $("recicon").innerHTML = `<svg><use href="#i-${on ? "stop" : "rec"}"/></svg>`;
   $("recsub").textContent = on
-    ? `${fmt.dur(rec.elapsed_s)}${rec.label ? " · " + rec.label : ""}${rec.trigger && rec.trigger !== "manual" ? " · started by a detector" : ""}`
+    ? `${fmt.dur(rec.elapsed_s)}${rec.label ? " · " + rec.label : ""}${rec.trigger === "tune" ? " · self-tune" : rec.trigger && rec.trigger !== "manual" ? " · started by a detector" : ""}`
     : rec?.available ? `Starts ${rec.prebuffer_s} s back · stops itself after ${Math.round(rec.max_duration_s / 60)} min` : "Unavailable with this camera";
   $("recpill").hidden = !on;
   $("rectime").textContent = on ? fmt.dur(rec.elapsed_s) : "";
@@ -805,9 +866,142 @@ $("savebtn").addEventListener("click", async () => {
 });
 addEventListener("resize", () => editing && draw());
 
+// ---------------- self-tune
+let tune = null, openReport = null;
+const FIELD_NAMES = { northbound: "Northbound", southbound: "Southbound", deck: "Deck", bridge: "Bridge leaves", boat: "Boat",
+  northbound_amount: "Northbound amount", southbound_amount: "Southbound amount" };
+const PHASE_TEXT = { starting: "Starting", recording: "Recording", reviewing: "Reviewing", replaying: "Testing new settings" };
+const pct = (v) => v == null ? "–" : `${Math.round(v * 100)}%`;
+async function tuneTick() {
+  try { tune = await api("api/tune"); } catch { tune = null; }
+  $("tunecard").hidden = !tune || !tune.enabled;
+  if (!tune) return;
+  const on = !!tune.active;
+  const sw = $("tuneswitch");
+  sw.setAttribute("aria-checked", on);
+  sw.disabled = !on && !tune.recording_available;
+  $("tunefields").hidden = on;
+  $("tunetitle").textContent = on ? (PHASE_TEXT[tune.phase] || "On") : "Off";
+  $("tuneline").textContent = on && tune.max_rounds > 1 ? `Round ${tune.round} of up to ${tune.max_rounds}` : "";
+  if (on) {
+    $("tunesub").textContent = tune.message || "";
+    const rec = tune.chunks ? (tune.chunk - (tune.phase === "recording" ? 0.5 : 0)) / tune.chunks : 0;
+    const rev = tune.to_review ? tune.reviewed / tune.to_review : 0;
+    $("tunebar").hidden = false;
+    $("tunebarfill").style.width = `${Math.round(100 * (tune.phase === "recording" ? rec * 0.8 : 0.8 + 0.2 * rev))}%`;
+    $("tunenote").textContent = tune.to_review ? `${tune.reviewed} of ${tune.to_review} moments reviewed` : "";
+    $("tunenote").className = "note";
+  } else {
+    $("tunebar").hidden = true;
+    $("tunesub").textContent = !tune.recording_available ? "Needs recording, which is off on this device"
+      : "Records, has Claude review the footage, and tunes the detector";
+    $("tunenote").textContent = tune.error ? `Last run: ${tune.error}` : tune.reviewer.ok ? `Reviewer: ${tune.reviewer.why}` : `No review: ${tune.reviewer.why}. It will still count and report, but not tune.`;
+    $("tunenote").className = tune.error ? "note bad" : tune.reviewer.ok ? "note" : "note warn";
+  }
+  const tuned = tune.tuned || [];
+  $("tuned").hidden = !tuned.length;
+  $("tuned").innerHTML = tuned.length ? tuned.map((t) => `<div>${esc(t.key.split(".")[1].replaceAll("_", " "))}: <b>${esc(t.base)}</b> → <b>${esc(t.now)}</b></div>`).join("")
+    + `<div><button class="btn" id="tunereset" style="margin-top:6px" ${on ? "disabled" : ""}>Reset tuning</button></div>` : "";
+  renderReports(tune.reports || []);
+}
+$("tuneswitch").addEventListener("click", async () => {
+  const sw = $("tuneswitch");
+  sw.disabled = true;
+  try {
+    if (tune?.active) await api("api/tune/stop", { method: "POST" });
+    else await api("api/tune/start", { method: "POST", body: JSON.stringify({ minutes: Number($("tunemins").value) }) });
+  } catch (e) { $("tunenote").textContent = e.message; $("tunenote").className = "note bad"; }
+  await tuneTick();
+});
+$("tuned").addEventListener("click", async (e) => {
+  if (e.target.id !== "tunereset") return;
+  try { await api("api/tune/reset", { method: "POST" }); } catch (err) { $("tunenote").textContent = err.message; }
+  await tuneTick();
+});
+let reportKeys = "";
+function renderReports(list) {
+  $("tunesec").hidden = !list.length;
+  $("tunecount").textContent = list.length ? `${list.length} round${list.length > 1 ? "s" : ""}` : "";
+  const keys = list.map((r) => `${r.id}:${r.status}:${r.headline}`).join("|");
+  if (keys === reportKeys) return;
+  reportKeys = keys;
+  $("reports").innerHTML = list.map((r) =>
+    `<div><button class="rep" data-id="${esc(r.id)}" aria-expanded="${r.id === openReport}">` +
+    `<span class="when">${esc(fmt.when(r.started_at))}</span>` +
+    `<span class="what">${esc(r.status === "running" ? "Running…" : r.headline || r.status)}</span>` +
+    `<span class="pct ${r.accuracy == null ? "" : r.accuracy >= (tune?.target_accuracy ?? .9) ? "ok" : "warn"}">${pct(r.accuracy)}</span></button>` +
+    `<div class="repbody" id="rep-${esc(r.id)}" hidden></div></div>`).join("");
+  if (openReport) showReport(openReport);
+}
+$("reports").addEventListener("click", (e) => {
+  const m = e.target.closest(".miss");
+  if (m) { showFrames(m.dataset.rep, m.dataset.a, m.dataset.b, m.dataset.title); return; }
+  const b = e.target.closest(".rep");
+  if (!b) return;
+  openReport = openReport === b.dataset.id ? null : b.dataset.id;
+  for (const x of $("reports").querySelectorAll(".rep")) x.setAttribute("aria-expanded", x.dataset.id === openReport);
+  for (const x of $("reports").querySelectorAll(".repbody")) x.hidden = true;
+  if (openReport) showReport(openReport);
+});
+const say = (f, v) => {
+  if (v == null) return "–";
+  if (f === "deck") return v === true ? "clear" : v === false ? "cars" : String(v);
+  if (f === "boat") return v === true || v === "yes" ? "boat" : v === false || v === "no" ? "no boat" : String(v);
+  if (typeof v === "object") return v.motion === "moving" && v.amount && v.amount !== "unclear" ? `moving, ${v.amount}` : v.motion;
+  return String(v);
+};
+async function showReport(id) {
+  const el = $(`rep-${id}`);
+  if (!el) return;
+  let r;
+  try { r = await api(`api/tune/reports/${encodeURIComponent(id)}`); } catch (e) { el.hidden = false; el.innerHTML = `<div class="note bad">${esc(e.message)}</div>`; return; }
+  const c = r.counts || {}, cars = c.cars || {}, acc = r.accuracy || {}, live = acc.live || {}, rp = acc.replay;
+  const tiles = [
+    ["Cars northbound", c.model ? cars.northbound ?? 0 : "–", "", c.model ? "counted by the reference model" : c.model_error || "no model"],
+    ["Cars southbound", c.model ? cars.southbound ?? 0 : "–", "", ""],
+    ["Boats", c.boats_reference ?? 0, "", `detector reported ${c.boats_detector ?? 0}`],
+    ["Openings", c.openings ?? 0, "", `${c.gates_down ?? 0} times gates down`],
+    ["Standstills", `${c.standstills?.northbound ?? 0} / ${c.standstills?.southbound ?? 0}`, "", "northbound / southbound"],
+    ["Recorded", r.recorded_s >= 3600 ? `${(r.recorded_s / 3600).toFixed(1)} h` : `${Math.round((r.recorded_s || 0) / 60)} min`, "", `${r.chunks ?? 0} chunks · ${r.reviewed ?? 0} moments reviewed`],
+  ];
+  const fields = Object.keys(FIELD_NAMES).filter((f) => live.fields?.[f] || rp?.before?.fields?.[f]);
+  const rows = fields.map((f) => {
+    const L = live.fields?.[f], B = rp?.before?.fields?.[f], A = rp?.after?.fields?.[f];
+    return `<tr><td>${esc(FIELD_NAMES[f])}</td><td>${L ? L.n : "–"}</td><td>${pct(L?.accuracy)}</td>` +
+      (rp ? `<td>${B ? `${pct(B.accuracy)} → ${pct(A?.accuracy)}` : `<span class="note">not replayed</span>`}</td>` : "") + `</tr>`;
+  }).join("");
+  const changes = (r.changes || []).map((ch) => `<tr><td>${esc(ch.key.split(".")[1].replaceAll("_", " "))}</td><td>${esc(ch.old)} → ${esc(ch.new)}</td><td style="text-transform:none">${esc(ch.why)}</td></tr>`).join("");
+  const misses = (r.disagreements || []).map((d) => {
+    const lines = d.fields.map((f) => `${FIELD_NAMES[f]}: detector said <b>${esc(say(f, d.live?.[f]))}</b>, Claude saw <b>${esc(say(f, d.seen?.[f]))}</b>`).join("<br>");
+    const title = `${fmt.when(d.at)}: ` + d.fields.map((f) => `${FIELD_NAMES[f]} ${say(f, d.live?.[f])} vs ${say(f, d.seen?.[f])}`).join(", ");
+    return `<button class="miss" data-rep="${esc(r.id)}" data-a="${esc(d.a)}" data-b="${esc(d.b)}" data-title="${esc(title)}">` +
+      `<img loading="lazy" src="tune/${encodeURIComponent(r.id)}/${encodeURIComponent(d.a)}" alt="">` +
+      `<div class="meta"><span>${lines}</span><span class="s">${esc(new Date(d.at * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit", second: "2-digit" }))}${d.note ? " · " + esc(d.note) : ""}</span></div></button>`;
+  }).join("");
+  el.innerHTML =
+    `<div class="readings">${tiles.map((t) => readingHtml(t)).join("")}</div>` +
+    (r.status === "running" ? `<div class="note">This round is still running.</div>` : "") +
+    (fields.length ? `<div><h3>Detector vs Claude's review</h3><table class="acc"><thead><tr><th>Signal</th><th>Reviewed</th><th>Detector right</th>${rp ? "<th>Replay old → new</th>" : ""}</tr></thead><tbody>${rows}</tbody></table>` +
+      `<div class="note" style="margin-top:6px">Overall ${pct(live.accuracy)} of ${live.n} reviewed readings, target ${pct(r.target_accuracy)}.</div></div>` :
+      `<div class="note">${r.reviewer?.ok === false ? "Not reviewed: " + esc(r.reviewer.why) : "No reviewed moments."}</div>`) +
+    (r.decision ? `<div><h3>Tuning</h3><div>${esc(r.decision)}</div></div>` : "") +
+    (changes ? `<table class="acc"><thead><tr><th>Setting</th><th>Change</th><th>What it does</th></tr></thead><tbody>${changes}</tbody></table>` : "") +
+    (misses ? `<div><h3>Where they disagreed</h3><div class="misses">${misses}</div></div>` : "") +
+    ((r.problems || []).length ? `<div class="note bad">${r.problems.map(esc).join("<br>")}</div>` : "") +
+    (r.reviewer?.calls ? `<div class="note">Review: ${r.reviewer.calls} calls to ${esc(r.reviewer.model)}, ${Math.round((r.reviewer.input_tokens || 0) / 1000)}k tokens in, ${Math.round((r.reviewer.output_tokens || 0) / 1000)}k out.</div>` : "");
+  el.hidden = openReport !== id;
+}
+function showFrames(rid, a, b, title) {
+  const src = (n) => `tune/${encodeURIComponent(rid)}/${encodeURIComponent(n)}`;
+  $("framepair").innerHTML = `<img src="${src(a)}" alt="First frame"><img src="${src(b)}" alt="A couple of seconds later">`;
+  $("frametitle").textContent = title;
+  $("framedlg").showModal();
+}
+$("closeframe").addEventListener("click", () => $("framedlg").close());
+
 setStreams();
-tick(); recTick(); loadClips();
-setInterval(tick, 2000); setInterval(recTick, 1000); setInterval(loadClips, 15000);
+tick(); recTick(); loadClips(); tuneTick();
+setInterval(tick, 2000); setInterval(recTick, 1000); setInterval(loadClips, 15000); setInterval(tuneTick, 3000);
 </script>
 </body>
 </html>
