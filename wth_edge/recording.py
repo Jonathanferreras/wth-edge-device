@@ -150,6 +150,9 @@ class Recorder:
         # Set when a clip hit max_duration_s or someone pressed Stop: auto-recording then
         # waits for the scene to go quiet instead of starting a new clip straight away.
         self.hold_auto: str | None = None
+        # Set while a self-tuning session owns the recorder: auto-recording keeps out, and
+        # the session's own clips (trigger "tune") are never stopped by it.
+        self.reserved_by: str | None = None
 
     @property
     def available(self) -> bool:
@@ -169,6 +172,7 @@ class Recorder:
                 "prebuffer_s": self.rcfg.prebuffer_s,
                 "max_duration_s": self.rcfg.max_duration_s,
                 "labels": list(self.rcfg.labels),
+                "reserved_by": self.reserved_by,
             }
 
     def start(self, trigger: str = "manual", label: str | None = None, note: str = "") -> dict[str, Any]:

@@ -6,7 +6,8 @@ run-up to every opening is in the clip) or a boat crossing starts, and stops
 holds the seconds before the trigger. Without the state machine the bridge position
 (opening, open, closing) triggers instead.
 
-Manual clips are never stopped from here. When an automatic clip hits the maximum length,
+Manual clips are never stopped from here, and neither are self-tuning chunks (trigger
+``tune``): while a tuning session holds the recorder, auto-recording stands aside. When an automatic clip hits the maximum length,
 or someone stops it from the panel, while the bridge is still up or the boat still there, a
 new clip does not start until things go quiet. So pressing Stop sticks, and a stuck
 detector can't fill the disk with back-to-back clips.
@@ -73,6 +74,10 @@ class AutoRecorder:
                     entry["ais"] = {k: a.get(k) for k in ("mmsi", "name", "side", "distance_m", "eta_s")}
                 rec.log_detection(entry, at=now)
         if not self.cfg.enabled or not rec.available:
+            return
+        if getattr(rec, "reserved_by", None) is not None or rec.active_trigger == "tune":
+            # A self-tuning session is recording everything already; stay out of its way.
+            self._quiet_since, self._blocked = None, False
             return
 
         why = self.reason(st)
