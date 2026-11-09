@@ -234,8 +234,11 @@ class TrafficDetectorSection:
     hold_s: float = 3.0
     # Background learning rate per detector frame (small = cars stay "foreground" for minutes).
     background_rate: float = 0.002
-    # Deck fill below this means the deck is clear.
+    # The deck is clear when both lanes are at a standstill, or when its fill is below
+    # deck_clear_max and no car has crossed it (no frame with flow or a moving car blob)
+    # for deck_clear_s.
     deck_clear_max: float = 0.03
+    deck_clear_s: float = 5.0
     # Boxes around the cars in each lane, for the panel. A blob smaller than this fraction
     # of its lane box is ignored; at most vehicle_max per box.
     vehicle_boxes: bool = True
