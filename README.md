@@ -252,7 +252,7 @@ wth-edge tune-review        # one run now, as yourself
 ```
 
 `[tune] reviewer = "api"` uses the Anthropic API from the service instead (needs
-`ANTHROPIC_API_KEY` in `/etc/wth/secrets.env`, billed per token); `"none"` records, counts
+`ANTHROPIC_API_KEY` in `/etc/wth/secrets.env` and `sudo /opt/wth-edge/.venv/bin/pip install anthropic`, billed per token); `"none"` records, counts
 and reports without tuning. Self-tuning needs recording to be on and about 2 GB free for an
 hour of video.
 

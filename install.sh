@@ -221,7 +221,7 @@ step "Building the Python environment"
 if [[ ! -x "$INSTALL_DIR/.venv/bin/python" ]]; then
   python3 -m venv --system-site-packages "$INSTALL_DIR/.venv"
 fi
-"$INSTALL_DIR/.venv/bin/pip" install --quiet --disable-pip-version-check -e "$INSTALL_DIR[firestore,tune]"
+"$INSTALL_DIR/.venv/bin/pip" install --quiet --disable-pip-version-check -e "$INSTALL_DIR[firestore]"
 ln -sf "$INSTALL_DIR/.venv/bin/wth-edge" /usr/local/bin/wth-edge
 
 # ---------------------------------------------------------------- services

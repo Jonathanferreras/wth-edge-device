@@ -88,7 +88,7 @@ def available(tcfg, data_dir=None) -> tuple[bool, str]:
     try:
         import anthropic  # noqa: F401
     except ImportError:
-        return False, "the anthropic package is not installed (rerun install.sh)"
+        return False, "the anthropic package is not installed (sudo /opt/wth-edge/.venv/bin/pip install anthropic)"
     if not (os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")):
         return False, "no ANTHROPIC_API_KEY in /etc/wth/secrets.env"
     return True, f"Claude ({tcfg.model})"
