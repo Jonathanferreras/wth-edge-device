@@ -269,6 +269,12 @@ own). A box's tab shows that box zoomed in, cut from the full-resolution frame, 
 full view with just that box drawn, plus what its detector reads right now. The same crop is
 at `/roi/<name>.jpg`, and `stream.mjpg?roi=<name>` streams it.
 
+**Boxes** and **Detections** on the feed toggle separately. Detections are the leaf lines,
+the lane levels, a box around each car the lane detector sees (white moving, amber stopped)
+and the boat (red). Car boxes are blobs of "not road" in the lane and deck boxes rather than
+a car model, so a tight queue can show as one box; tune them in `[traffic_detector]`
+(`vehicle_min_area`, `vehicle_max`, or `vehicle_boxes = false`).
+
 ### Import the old dataset
 
 The clips from `wth-inference-training/dataset` can be brought into the same layout, so

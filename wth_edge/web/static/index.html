@@ -285,9 +285,9 @@
         <div class="waiting" id="waiting">Starting the camera…</div>
         <div class="ov tl"><span class="glass" id="feedlabel">Live camera</span></div>
         <div class="ov tr" id="feedright">
-          <div class="seg" id="overlayseg" role="group" aria-label="Boxes on the live view">
-            <button aria-pressed="true" data-overlay="1">Boxes</button>
-            <button aria-pressed="false" data-overlay="0">Clean</button>
+          <div class="seg" id="overlayseg" role="group" aria-label="What to draw on the view">
+            <button aria-pressed="true" data-layer="boxes" id="boxestoggle" title="The detector boxes (ROIs)">Boxes</button>
+            <button aria-pressed="true" data-layer="det" title="Cars in the lanes and boats on the river">Detections</button>
           </div>
           <span class="glass" id="feedpill"><span class="dot"></span><span>…</span></span>
         </div>
@@ -369,7 +369,9 @@ const roiColor = (name) => COLORS[Math.max(0, Object.keys(state?.rois || {}).ind
 
 // ---------------- tabs + live view
 // "" is the full view; any other value is an ROI name from the site config.
-let tab = store.get("wth.tab") || "", editing = false, overlay = store.get("wth.overlay") !== "0", tabKeys = "";
+let tab = store.get("wth.tab") || "", editing = false, tabKeys = "";
+// Two layers on the feed, each toggled on its own and remembered per browser.
+const layers = { boxes: store.get("wth.boxes") !== "0", det: store.get("wth.det") !== "0" };
 function renderTabs() {
   const names = Object.keys(state?.rois || {});
   const keys = names.join("|");
@@ -408,13 +410,13 @@ function setStreams() {
   $("feeds").classList.toggle("split", !!tab);
   $("view").classList.toggle("zoom", !!tab);
   $("ctxfeed").hidden = !tab;
-  $("overlayseg").hidden = !!tab;
+  $("boxestoggle").hidden = !!tab; // a zoomed box has no other boxes to show
   $("viewrow").hidden = !!tab;
   if (tab) {
-    $("stream").src = `stream.mjpg?roi=${encodeURIComponent(tab)}&t=${t}`;
+    $("stream").src = `stream.mjpg?roi=${encodeURIComponent(tab)}&det=${layers.det ? 1 : 0}&t=${t}`;
     const fw = $("ctx").naturalWidth || 16, fh = $("ctx").naturalHeight || 9;
     if (r) $("view").style.setProperty("--zoom-aspect", String(clamp((r.w * fw) / (r.h * fh), 1, 2.4)));
-    $("ctx").src = `stream.mjpg?overlay=1&only=${encodeURIComponent(tab)}&t=${t}`;
+    $("ctx").src = `stream.mjpg?boxes=1&det=${layers.det ? 1 : 0}&only=${encodeURIComponent(tab)}&t=${t}`;
     $("feedlabel").innerHTML = `<span class="dot" style="background:${roiColor(tab)}"></span>${esc(fmt.name(tab))} · zoomed`;
     $("feedcaption").textContent = "";
     $("ctxcaption").textContent = fmt.name(tab);
@@ -422,12 +424,12 @@ function setStreams() {
     $("tabhint").textContent = r ? `Cut from the full-resolution frame · ${Math.round(r.w * 100)}% × ${Math.round(r.h * 100)}% of the view` : "";
   } else {
     $("ctx").removeAttribute("src");
-    $("stream").src = `stream.mjpg?overlay=${overlay ? 1 : 0}&t=${t}`;
+    $("stream").src = `stream.mjpg?boxes=${layers.boxes ? 1 : 0}&det=${layers.det ? 1 : 0}&t=${t}`;
     $("feedlabel").textContent = "Live camera";
     $("feedcaption").textContent = "";
     $("tabhint").textContent = "Pick a box to zoom in on what that detector sees";
   }
-  for (const b of $("overlayseg").querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.overlay === (overlay ? "1" : "0")));
+  for (const b of $("overlayseg").querySelectorAll("button")) b.setAttribute("aria-pressed", String(layers[b.dataset.layer]));
 }
 $("ctx").addEventListener("load", () => {
   const r = state?.rois?.[tab], img = $("ctx");
@@ -437,7 +439,8 @@ $("stream").addEventListener("load", () => { $("waiting").hidden = true; });
 $("stream").addEventListener("error", () => { $("waiting").hidden = false; });
 $("overlayseg").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
-  overlay = b.dataset.overlay === "1"; store.set("wth.overlay", overlay ? "1" : "0"); setStreams();
+  const k = b.dataset.layer;
+  layers[k] = !layers[k]; store.set(`wth.${k}`, layers[k] ? "1" : "0"); setStreams();
 });
 document.addEventListener("visibilitychange", setStreams); // don't make the Pi encode for a hidden tab
 
