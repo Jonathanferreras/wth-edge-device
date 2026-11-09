@@ -113,9 +113,15 @@ traffic --(no lane moving 15 s)--> watch --(a leaf moving or up)--> track
    to `track`. Cars moving again, or 30 s without leaf movement, goes back to `traffic`,
    so a red light or a crash bounces between the two. A boat (camera or AIS) keeps the
    watch going until 2 minutes after the last sighting.
+   A leaf reading only counts while no car is moving.
 3. **track**: the bridge is moving. Leaves every frame and the boat model at its full
    rate, so the boat's path is followed while it is in view. All leaves flat for 15 s goes
    back to `watch`, and from there cars moving goes back to `traffic`.
+
+Traffic flowing in both directions for 5 s ends `track` whatever the leaves read: a pole
+in a leaf box can look like a raised leaf, but cars can't cross an open bridge. The opening
+state machine follows the same rule: a leaf reading never starts an opening while either
+direction flows, and both directions flowing ends one.
 
 Without lane boxes there is nothing to gate on, so the pipeline stays in `watch`/`track`.
 In `traffic` the leaves are not measured; their state reads `closed` with `assumed: true`,
