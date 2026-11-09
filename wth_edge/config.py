@@ -364,8 +364,19 @@ class TuneSection:
     pair_gap_s: float = 2.0
     # At most this many reviewed moments per round (keeps the API bill bounded).
     max_reviews: int = 360
-    # "claude" labels the frames through the Anthropic API (ANTHROPIC_API_KEY); "none" skips it.
-    reviewer: str = "claude"
+    # Who labels the frames: "claude-code" (Claude Code on the Pi, run as you by
+    # wth-tune-review.timer), "api" (the Anthropic API from the service, ANTHROPIC_API_KEY),
+    # or "none" (record, count and report only).
+    reviewer: str = "claude-code"
+    # Claude Code: the command (default: claude on PATH or ~/.local/bin/claude), the model
+    # ("" = Claude Code's default), moments per run, and how long one run may take.
+    claude_command: str = ""
+    claude_code_model: str = ""
+    claude_code_batch: int = 12
+    claude_code_timeout_s: float = 900.0
+    # After the recording ends, wait at most this long for the reviews to come back.
+    review_wait_s: float = 10800.0
+    # The API reviewer's model and effort.
     model: str = "claude-opus-5-5"
     effort: str = "low"
     # The offline reference pass: YOLO over the lanes and the river, this many times a second.
