@@ -1,4 +1,5 @@
-"""Command line: ``wth-edge run | display | play | art | doctor | config | update | import-dataset | eval | ais``."""
+"""Command line: ``wth-edge run | display | play | art | doctor | config | update | import-dataset | eval | ais
+| tune-review``."""
 
 from __future__ import annotations
 
@@ -69,6 +70,10 @@ def main(argv: list[str] | None = None) -> int:
     ev.add_argument("--out", help="write per-clip results to a .json or .csv file")
     ais_p = sub.add_parser("ais", help="watch the AIS vessel feed for a while and print what it sees")
     ais_p.add_argument("--minutes", type=float, default=2.0, help="how long to listen (default 2)")
+    tr = sub.add_parser("tune-review", help="have Claude Code label the self-tuning frames waiting in the queue "
+                                           "(run as the user Claude Code is logged in as; wth-tune-review.timer does this)")
+    tr.add_argument("--data-dir", help="default: paths.data_dir from config")
+    tr.add_argument("--max-batches", type=int, help="stop after this many chunks")
     args = parser.parse_args(argv)
     _setup_logging(args.verbose)
 
@@ -186,6 +191,13 @@ def main(argv: list[str] | None = None) -> int:
             pass
         finally:
             src.stop()
+        return 0
+    if args.cmd == "tune-review":
+        from .tune.claude_code import review_pending
+
+        n = review_pending(cfg.tune, Path(args.data_dir).expanduser() if args.data_dir else cfg.paths.data_dir,
+                           max_batches=args.max_batches)
+        print(f"labelled {n} moments")
         return 0
     if args.cmd == "config":
         print(json.dumps(asdict(cfg), indent=2, default=str))
