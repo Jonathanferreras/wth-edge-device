@@ -4,14 +4,17 @@ Instead of measuring everything on every frame, the pipeline works in three stag
 
 1. ``traffic``: only the lane and deck boxes are measured. Once no lane has moved for
    ``stopped_s`` (both directions stopped, or the lanes can't be read), go to ``watch``.
-2. ``watch``: also measure the leaves and look for boats. A leaf moving or up -> ``track``.
+2. ``watch``: also measure the leaves and look for boats. A leaf moving or up, with no
+   car moving, -> ``track``.
    Cars moving again for ``resume_s`` -> ``traffic``. No leaf movement for ``quiet_s`` ->
    ``traffic`` as well, so a stop for a red light or an accident bounces between the two.
    A boat (camera or AIS) pushes that deadline out to ``boat_quiet_s`` after the last
    sighting: a boat in the river is the best sign an opening is coming.
 3. ``track``: the bridge is moving or up. Leaves every frame, the boat model at its full
    rate. All leaves flat for ``flat_s`` (15 s) -> back to ``watch`` (and from there, once cars
-   move, to ``traffic``). Leaves unreadable for ``lost_s`` -> ``watch``.
+   move, to ``traffic``). Leaves unreadable for ``lost_s`` -> ``watch``. Both directions
+   flowing for ``resume_s`` -> ``traffic`` whatever the leaves read: a pole or a mast in
+   the leaf box can look like a raised leaf, but cars can't drive over an open bridge.
 
 Pure like ``Pipeline``: no threads, no clock, so ``wth-edge eval`` replays it. Without lane
 boxes there is no traffic to watch, so the machine stays in ``watch`` / ``track``.
@@ -52,6 +55,7 @@ class StageMachine:
         self._flat_since: float | None = None
         self._lost_since: float | None = None
         self._quiet_until: float | None = None
+        self._all_moving_since: float | None = None
         self.boat_seen = False
 
     # ---- helpers ----
@@ -69,7 +73,7 @@ class StageMachine:
     def _enter(self, t: float, stage: str, reason: str) -> dict[str, Any]:
         prev = self.stage
         self.stage, self.since, self.reason = stage, t, reason
-        self._flat_since = self._lost_since = None
+        self._flat_since = self._lost_since = self._all_moving_since = None
         if stage == "watch":
             self._quiet_until = t + self.cfg.quiet_s
             self.boat_seen = False
@@ -94,8 +98,12 @@ class StageMachine:
                 return [self._enter(t, "watch", "traffic_stopped" if lanes_readable else "traffic_unreadable")]
             return []
 
+        any_moving = any(m is True for m in s.lanes_moving.values())
+        all_moving = has_lanes and all(m is True for m in s.lanes_moving.values())
+
         if self.stage == "watch":
-            if s.leaves == "active":
+            # A leaf only counts while no car moves: flowing traffic means the bridge is down.
+            if s.leaves == "active" and not any_moving:
                 return [self._enter(t, "track", "leaves_moving")]
             if s.boat:
                 self.boat_seen = True
@@ -108,7 +116,14 @@ class StageMachine:
                 return [self._enter(t, "traffic", "bridge_quiet")]
             return []
 
-        # track
+        # track. Both directions flowing again ends it, whatever the leaves read.
+        if not all_moving:
+            self._all_moving_since = None
+        else:
+            if self._all_moving_since is None:
+                self._all_moving_since = t
+            if t - self._all_moving_since >= cfg.resume_s:
+                return [self._enter(t, "traffic", "traffic_moving")]
         if s.leaves == "active":
             self._flat_since = self._lost_since = None
             return []

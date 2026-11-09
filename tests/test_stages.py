@@ -212,3 +212,25 @@ def test_model_looks_only_where_something_moved():
     pipe._box_motion_at["boat_near"] = 5.0    # motion in the near box only
     assert pipe._yolo_look(5.5, None, rois) is not None
     assert looked == [0.7] and pipe._crossing_box == "boat_near"
+
+
+def test_leaves_do_not_count_while_cars_move():
+    m = machine()
+    events, _ = run(m, [(20, cars(False, "flat")), (4, cars(True, "active"))])
+    # In watch, a leaf "up" with cars moving is a pole or a misread, not an opening.
+    assert [e["stage"] for e in events] == ["watch"]
+
+
+def test_traffic_flowing_both_ways_ends_track_whatever_the_leaves_say():
+    m = machine(resume_s=5)
+    events, _ = run(m, [(20, cars(False, "flat")), (10, cars(False, "active")), (10, cars(True, "active"))])
+    assert [(e["stage"], e["reason"]) for e in events] == [
+        ("watch", "traffic_stopped"), ("track", "leaves_moving"), ("traffic", "traffic_moving")]
+    assert events[-1]["at"] == pytest.approx(30 + 5)
+
+
+def test_one_lane_moving_does_not_end_track():
+    m = machine(resume_s=5)
+    run(m, [(20, cars(False, "flat")), (10, cars(False, "active")),
+            (30, StageInputs({"northbound": True, "southbound": False}, "active"))])
+    assert m.stage == "track"
