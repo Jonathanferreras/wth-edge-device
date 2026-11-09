@@ -10,7 +10,7 @@ Instead of measuring everything on every frame, the pipeline works in three stag
    A boat (camera or AIS) pushes that deadline out to ``boat_quiet_s`` after the last
    sighting: a boat in the river is the best sign an opening is coming.
 3. ``track``: the bridge is moving or up. Leaves every frame, the boat model at its full
-   rate. All leaves flat for ``flat_s`` -> back to ``watch`` (and from there, once cars
+   rate. All leaves flat for ``flat_s`` (15 s) -> back to ``watch`` (and from there, once cars
    move, to ``traffic``). Leaves unreadable for ``lost_s`` -> ``watch``.
 
 Pure like ``Pipeline``: no threads, no clock, so ``wth-edge eval`` replays it. Without lane

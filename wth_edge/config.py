@@ -256,8 +256,9 @@ class StagesSection:
     boat_quiet_s: float = 120.0
     # watch -> traffic: cars moving in either direction for this long.
     resume_s: float = 5.0
-    # track -> watch: all leaves flat for this long.
-    flat_s: float = 5.0
+    # track -> watch: all leaves flat for this long. Long enough to ride out a leaf
+    # reading that flickers to "closed" mid-opening.
+    flat_s: float = 15.0
     # track -> watch: no leaf readable for this long.
     lost_s: float = 30.0
 

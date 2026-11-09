@@ -185,7 +185,9 @@ class Pipeline:
         st = tr.state()
         st["watching"] = self.stages is None or self.stages.looks_at_leaves
         if not st["watching"]:
-            st["line"] = None  # don't draw a stale line on the overlay
+            # Stage 1 only runs while traffic flows, and flowing traffic means the bridge is
+            # down, so say so rather than "unknown". No line: it would be a stale one.
+            st.update(position="closed", assumed=True, angle_deg=None, line=None)
         return st
 
     def state(self) -> dict[str, Any]:

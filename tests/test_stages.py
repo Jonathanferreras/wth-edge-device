@@ -80,7 +80,7 @@ def test_full_opening_walks_all_three_stages():
         (5, cars()),
         (20, cars(False, "flat", boat=True)),
         (120, cars(False, "active", boat=True)),   # lifting, up, lowering
-        (10, cars(False, "flat")),                 # down: back to watching the bridge
+        (20, cars(False, "flat")),                 # down: back to watching the bridge
         (10, cars(True, "flat")),                  # cars move: back to traffic
     ])
     assert [(e["stage"], e["reason"]) for e in events] == [
@@ -139,6 +139,7 @@ def test_pipeline_skips_leaves_and_boats_while_traffic_flows():
     st = pipe.state()
     assert st["stage"]["stage"] == "traffic"
     assert st["bridge"]["watching"] is False and st["bridge"]["angle_deg"] is None
+    assert st["bridge"]["position"] == "closed" and st["bridge"]["assumed"] is True
     assert not any(e["type"] in ("bridge", "boat_started") for e in events)
     assert pipe.signals().leaf_angles == {}
     # A still queue: after the stop the leaves are measured.

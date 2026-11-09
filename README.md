@@ -98,7 +98,7 @@ measure, starting from traffic, which is the cheapest and earliest sign of an op
 ```
 traffic --(no lane moving 15 s)--> watch --(a leaf moving or up)--> track
    ^                                 |  ^                              |
-   +--(cars moving 5 s, or no leaf --+  +----(all leaves flat 5 s)-----+
+   +--(cars moving 5 s, or no leaf --+  +----(all leaves flat 15 s)-----+
        movement for 30 s)
 ```
 
@@ -109,10 +109,12 @@ traffic --(no lane moving 15 s)--> watch --(a leaf moving or up)--> track
    so a red light or a crash bounces between the two. A boat (camera or AIS) keeps the
    watch going until 2 minutes after the last sighting.
 3. **track**: the bridge is moving. Leaves every frame and the boat model at its full
-   rate, so the boat's path is followed while it is in view. All leaves flat for 5 s goes
+   rate, so the boat's path is followed while it is in view. All leaves flat for 15 s goes
    back to `watch`, and from there cars moving goes back to `traffic`.
 
 Without lane boxes there is nothing to gate on, so the pipeline stays in `watch`/`track`.
+In `traffic` the leaves are not measured; their state reads `closed` with `assumed: true`,
+since flowing traffic means the bridge is down.
 The boat motion gate keeps learning the river in every stage (it is cheap) so the watch
 doesn't start on a stale background; boats under a closed bridge with traffic flowing
 are not tracked. All times are in `[stages]`; `enabled = false` runs every detector on
