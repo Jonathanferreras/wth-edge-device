@@ -387,6 +387,10 @@ def test_claude_code_missing_is_reported(tmp_path, monkeypatch):
 
     cfg = make_cfg(tmp_path)
     monkeypatch.setattr(claude_code, "find_claude", lambda command="": None)
+    # No queue yet (the service makes it): nothing to do, no crash.
+    assert claude_code.review_pending(cfg.tune, tmp_path, run=FakeClaude()) == 0
+    q = claude_code.queue_dir(tmp_path)
+    assert q.stat().st_mode & 0o7777 == 0o2775
     assert claude_code.review_pending(cfg.tune, tmp_path, run=FakeClaude()) == 0
     ok, why = claude_code.available(tmp_path)
     assert not ok and "not installed" in why
@@ -399,9 +403,10 @@ def test_round_with_claude_code_reviewer(tmp_path, monkeypatch):
 
     cfg = make_cfg(tmp_path, chunk_s=12, duration_s=24, reviewer="claude-code", review_wait_s=30)
     store = ClipStore(tmp_path)
+    tuner = session.Tuner(cfg, FakeRecorder(store, ROIS), store)
+    tuner.recover()  # at startup the service makes the queue
     claude_code.review_pending(cfg.tune, tmp_path, claude="claude", run=FakeClaude())  # the timer has run once
     monkeypatch.setattr(claude_code.QueueReviewer, "poll_s", 0.05)
-    tuner = session.Tuner(cfg, FakeRecorder(store, ROIS), store)
     tuner._wait = lambda s: None
     stop = threading.Event()
 

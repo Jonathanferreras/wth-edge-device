@@ -57,13 +57,15 @@ MOMENTS_SCHEMA = {
 
 # ---------------------------------------------------------------- service side
 def queue_dir(data_dir: str | Path) -> Path:
+    """The queue folder, created by the service: group-writable and setgid, so the review
+    timer (your user, in group wth) can write labels there."""
     q = Path(data_dir) / "tune" / QUEUE
-    if not q.is_dir():
-        q.mkdir(parents=True, exist_ok=True)
-        try:
-            os.chmod(q, 0o2775)  # group wth may write; new files stay in group wth
-        except OSError:
-            pass
+    q.mkdir(parents=True, exist_ok=True)
+    try:
+        if q.stat().st_mode & 0o2070 != 0o2070:
+            os.chmod(q, 0o2775)
+    except OSError:
+        pass
     return q
 
 
@@ -170,8 +172,10 @@ def review_pending(tcfg, data_dir: str | Path, claude: str | None = None, run: C
                    max_batches: int | None = None) -> int:
     """Label every batch waiting in the queue. Returns the number of moments labelled."""
     qdir = Path(data_dir) / "tune" / QUEUE
-    if not qdir.is_dir():
-        qdir.mkdir(parents=True, exist_ok=True)
+    if not qdir.is_dir() or not os.access(qdir, os.W_OK):
+        # The service creates it (group wth, setgid, group-writable) when it starts.
+        log.error("can't write %s: restart wth-edge (it creates the queue) and check you're in group wth", qdir)
+        return 0
     claude = claude or find_claude(tcfg.claude_command)
     beat = {"at": time.time(), "user": getpass.getuser(), "claude": claude, "error": None}
     if claude is None:

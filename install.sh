@@ -175,6 +175,10 @@ else
 fi
 install -d -m 0750 -o root -g "$SERVICE_USER" "$ETC_DIR"
 install -d -m 0750 -o "$SERVICE_USER" -g "$SERVICE_USER" "$DATA_DIR"
+# Self-tuning review queue: the service writes batches, the review timer (your user, in
+# group wth) writes labels. Group-writable and setgid so both can.
+install -d -m 0755 -o "$SERVICE_USER" -g "$SERVICE_USER" "$DATA_DIR/tune"
+install -d -m 2775 -o "$SERVICE_USER" -g "$SERVICE_USER" "$DATA_DIR/tune/queue"
 
 # ---------------------------------------------------------------- config
 step "Writing config"

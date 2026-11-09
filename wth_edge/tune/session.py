@@ -187,8 +187,12 @@ class Tuner:
         return p if p.is_file() else None
 
     def recover(self) -> None:
-        """At startup: a session can't survive a restart. Mark it interrupted and delete
-        its recording."""
+        """At startup: create the review queue, and since a session can't survive a restart,
+        mark an unfinished one interrupted and delete its recording."""
+        if self.tcfg.reviewer == "claude-code":
+            from .claude_code import queue_dir
+
+            queue_dir(self.config.paths.data_dir)
         if not self.root.is_dir():
             return
         for p in self.root.glob("*/report.json"):
