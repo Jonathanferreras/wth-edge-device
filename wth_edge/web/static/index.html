@@ -560,7 +560,9 @@ function roiReadings(name, s) {
   if (name === "far_leaf") return [leafRow(s.far_leaf || {}, "Far leaf")];
   if (name === "deck") {
     const d = s.deck || {};
-    return [["Deck", d.clear == null ? "unknown" : d.clear ? "clear" : "busy", d.clear == null ? "lv-unknown" : d.clear ? "ok" : "warn", det ? "cars between the gates" : "detectors off"]];
+    return [["Deck", d.clear == null ? "unknown" : d.clear ? "clear" : "busy", d.clear == null ? "lv-unknown" : d.clear ? "ok" : "warn",
+      !det ? "detectors off" : d.lanes_standstill ? "both lanes at a standstill"
+        : d.quiet_s == null ? "cars between the gates" : d.quiet_s < 1 ? "a car is crossing" : `last car ${Math.round(d.quiet_s)} s ago`]];
   }
   if (name.startsWith("boat")) {
     const bt = s.boat || {};
