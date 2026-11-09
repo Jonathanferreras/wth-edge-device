@@ -22,6 +22,8 @@ SITE=""
 RECONFIGURE=0
 SKIP_APT=0
 NO_START=0
+# Self-tuning review: the user Claude Code is logged in as (default: whoever ran sudo).
+REVIEW_USER="${SUDO_USER:-}"
 
 usage() {
   cat <<EOF
@@ -33,6 +35,8 @@ Usage: sudo $0 [options]
   --reconfigure      rewrite $DEVICE_FILE from the options above (old one kept as .bak)
   --skip-apt         don't install system packages
   --no-start         install and enable services, but don't (re)start them
+  --review-user NAME user whose Claude Code reviews self-tuning frames (default: \$SUDO_USER;
+                     "none" skips the review timer)
   -h, --help
 
 Profiles: $(ls "$INSTALL_DIR/profiles" | sed 's/\.toml$//' | tr '\n' ' ')
@@ -47,6 +51,7 @@ while [[ $# -gt 0 ]]; do
     --reconfigure) RECONFIGURE=1; shift ;;
     --skip-apt) SKIP_APT=1; shift ;;
     --no-start) NO_START=1; shift ;;
+    --review-user) REVIEW_USER="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown option: $1" >&2; usage; exit 2 ;;
   esac
@@ -200,8 +205,8 @@ if [[ ! -f "$SECRETS_FILE" ]] || ! grep -q '^WTH_WEB_PASSWORD=' "$SECRETS_FILE";
   } >>"$SECRETS_FILE"
 fi
 if ! grep -q 'ANTHROPIC_API_KEY' "$SECRETS_FILE"; then
-  # Self-tuning has Claude review recorded footage; it needs a key. Left commented out.
-  echo "# ANTHROPIC_API_KEY=sk-ant-...   (self-tuning review; see README \"Self-tuning\")" >>"$SECRETS_FILE"
+  # Only for [tune] reviewer = "api"; the default review uses Claude Code. Left commented out.
+  echo "# ANTHROPIC_API_KEY=sk-ant-...   (only for [tune] reviewer = \"api\"; see README \"Self-tuning\")" >>"$SECRETS_FILE"
 fi
 chown root:"$SERVICE_USER" "$SECRETS_FILE"; chmod 0640 "$SECRETS_FILE"
 # The Firestore service account key, if one has been copied in (see the README).
@@ -227,14 +232,31 @@ for unit in "${units[@]}"; do
   sed "s|@INSTALL_DIR@|$INSTALL_DIR|g" "$INSTALL_DIR/systemd/$unit" >"/etc/systemd/system/$unit"
   chmod 0644 "/etc/systemd/system/$unit"
 done
+# Self-tuning review: Claude Code, as the user it's logged in as, labels queued frames.
+REVIEW_UNITS=()
+if [[ -n "$REVIEW_USER" && "$REVIEW_USER" != "none" && "$REVIEW_USER" != "root" ]] && id "$REVIEW_USER" >/dev/null 2>&1; then
+  usermod -a -G "$SERVICE_USER" "$REVIEW_USER"
+  for unit in wth-tune-review.service wth-tune-review.timer; do
+    sed -e "s|@INSTALL_DIR@|$INSTALL_DIR|g" -e "s|@REVIEW_USER@|$REVIEW_USER|g" \
+      "$INSTALL_DIR/systemd/$unit" >"/etc/systemd/system/$unit"
+    chmod 0644 "/etc/systemd/system/$unit"
+  done
+  REVIEW_UNITS=(wth-tune-review.timer)
+  review_home="$(getent passwd "$REVIEW_USER" | cut -d: -f6)"
+  if ! sudo -u "$REVIEW_USER" bash -lc 'command -v claude' >/dev/null 2>&1 && [[ ! -x "$review_home/.local/bin/claude" ]]; then
+    warn "Claude Code isn't installed for $REVIEW_USER; self-tuning can't review until it is"
+  fi
+else
+  warn "no review user (run with sudo from your account, or --review-user NAME): self-tuning won't review"
+fi
 if [[ "$DISPLAY_DRIVER" == "none" && -f /etc/systemd/system/wth-display.service ]]; then
   systemctl disable --now wth-display.service || true
   rm -f /etc/systemd/system/wth-display.service
 fi
 systemctl daemon-reload
-systemctl enable "${units[@]}" >/dev/null
+systemctl enable "${units[@]}" "${REVIEW_UNITS[@]}" >/dev/null
 if [[ $NO_START -eq 0 && $REBOOT_NEEDED -eq 0 ]]; then
-  systemctl restart "${units[@]}"
+  systemctl restart "${units[@]}" "${REVIEW_UNITS[@]}"
   sleep 4
 fi
 

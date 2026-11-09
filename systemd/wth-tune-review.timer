@@ -1,0 +1,10 @@
+[Unit]
+Description=Run the self-tuning review every 2 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=2min
+AccuracySec=15s
+
+[Install]
+WantedBy=timers.target

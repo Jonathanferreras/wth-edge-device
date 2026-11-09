@@ -6,7 +6,7 @@ set -euo pipefail
 PURGE=0
 [[ "${1:-}" == "--purge" ]] && PURGE=1
 
-for unit in wth-display.service wth-edge.service; do
+for unit in wth-tune-review.timer wth-tune-review.service wth-display.service wth-edge.service; do
   if [[ -f "/etc/systemd/system/$unit" ]]; then
     systemctl disable --now "$unit" || true
     rm -f "/etc/systemd/system/$unit"
