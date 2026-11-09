@@ -204,8 +204,8 @@ def test_round_records_reviews_reports_and_cleans_up(tmp_path, monkeypatch):
     cfg = make_cfg(tmp_path, chunk_s=12, duration_s=24)
     store = ClipStore(tmp_path)
     rec = FakeRecorder(store, ROIS)
-    monkeypatch.setattr(review, "available", lambda tcfg: (True, "fake"))
-    monkeypatch.setattr(review, "ClaudeReviewer", FakeReviewer)
+    monkeypatch.setattr(review, "available", lambda tcfg, d=None: (True, "fake"))
+    monkeypatch.setattr(review, "make_reviewer", lambda tcfg, d: FakeReviewer(tcfg))
     tuner = session.Tuner(cfg, rec, store)
     tuner._wait = lambda s: None
     out = tuner._round("20261109T190000Z", 1, 24.0)
@@ -292,8 +292,8 @@ def test_round_fits_replays_and_decides(tmp_path, monkeypatch):
 
     cfg = make_cfg(tmp_path, chunk_s=12, duration_s=24, sample_s=2, min_gain=-1.0)
     store = ClipStore(tmp_path)
-    monkeypatch.setattr(review, "available", lambda tcfg: (True, "fake"))
-    monkeypatch.setattr(review, "ClaudeReviewer", SplitReviewer)
+    monkeypatch.setattr(review, "available", lambda tcfg, d=None: (True, "fake"))
+    monkeypatch.setattr(review, "make_reviewer", lambda tcfg, d: SplitReviewer(tcfg))
     tuner = session.Tuner(cfg, SplitRecorder(store, ROIS), store)
     tuner._wait = lambda s: None
     tuner._round("20261109T190000Z", 1, 24.0)
@@ -316,7 +316,7 @@ def test_panel_endpoints(tmp_path, monkeypatch):
     from wth_edge.web.app import create_app
 
     monkeypatch.setenv("WTH_WEB_PASSWORD", "")
-    monkeypatch.setattr(review, "available", lambda tcfg: (False, "no key"))
+    monkeypatch.setattr(review, "available", lambda tcfg, d=None: (False, "no key"))
     cfg = make_cfg(tmp_path)
     store = ClipStore(tmp_path)
     rec = FakeRecorder(store, ROIS)
@@ -333,3 +333,91 @@ def test_panel_endpoints(tmp_path, monkeypatch):
     tuner._apply([{"key": "traffic_detector.flow_min", "old": 0.003, "new": 0.002}], "x-r1")
     assert client.post("/api/tune/reset").json()["undone"][0]["now"] == 0.002
     assert cfg.traffic_detector.flow_min == 0.003
+
+
+# ---------------------------------------------------------------- Claude Code through the queue
+class FakeClaude:
+    """Stands in for `claude -p`: answers every moment in the prompt as northbound moving."""
+
+    def __init__(self, fail_first=False):
+        self.calls, self.fail_first = [], fail_first
+
+    def __call__(self, cmd, capture_output, text, timeout, cwd):
+        import re
+        import subprocess
+
+        self.calls.append(cmd)
+        assert cmd[1] == "-p" and "--json-schema" in cmd and "Read" in cmd
+        if self.fail_first and len(self.calls) == 1:
+            return subprocess.CompletedProcess(cmd, 1, "", "boom")
+        ids = re.findall(r"- id (\S+):", cmd[2])
+        moments = [{"id": i, **label(nb="moving"), "deck": "maybe"} for i in ids]  # "maybe" isn't allowed
+        out = {"is_error": False, "structured_output": {"moments": moments},
+               "usage": {"input_tokens": 10, "cache_read_input_tokens": 90, "output_tokens": 5}}
+        return subprocess.CompletedProcess(cmd, 0, json.dumps(out), "")
+
+
+def test_claude_code_queue_round_trip(tmp_path):
+    from wth_edge.tune import claude_code
+
+    cfg = make_cfg(tmp_path, claude_code_batch=2)
+    assert claude_code.available(tmp_path)[0] is False  # the timer hasn't run yet
+    q = claude_code.QueueReviewer(cfg.tune, tmp_path)
+    frames = tmp_path / "tune" / "R-r1" / "frames"
+    frames.mkdir(parents=True)
+    samples = [{"t": t, "a": f"c_{t:07.2f}a.jpg", "b": f"c_{t + 1:07.2f}b.jpg"} for t in (1.0, 5.0, 9.0)]
+    q.submit("R-r1", "c", frames, ["northbound", "deck"], 1.0, samples)
+    fake = FakeClaude(fail_first=True)
+    # First timer run: one group fails (left for later), the other is labelled.
+    assert claude_code.review_pending(cfg.tune, tmp_path, claude="claude", run=fake) == 1
+    assert q.progress() == (1, False)
+    assert claude_code.review_pending(cfg.tune, tmp_path, claude="claude", run=fake) == 2
+    assert q.progress() == (3, True)
+    ok, why = claude_code.available(tmp_path)
+    assert ok and "Claude Code as" in why
+    q.collect(samples, lambda: False)
+    assert all(s["label"]["northbound"]["motion"] == "moving" for s in samples)
+    assert samples[0]["label"]["deck"] == "unclear"
+    assert q.usage()["calls"] == 2 and q.usage()["input_tokens"] == 200
+    assert [p.name for p in (tmp_path / "tune" / "queue").iterdir()] == [".reviewer.json"]
+
+
+def test_claude_code_missing_is_reported(tmp_path, monkeypatch):
+    from wth_edge.tune import claude_code
+
+    cfg = make_cfg(tmp_path)
+    monkeypatch.setattr(claude_code, "find_claude", lambda command="": None)
+    assert claude_code.review_pending(cfg.tune, tmp_path, run=FakeClaude()) == 0
+    ok, why = claude_code.available(tmp_path)
+    assert not ok and "not installed" in why
+
+
+def test_round_with_claude_code_reviewer(tmp_path, monkeypatch):
+    import threading
+
+    from wth_edge.tune import claude_code, session
+
+    cfg = make_cfg(tmp_path, chunk_s=12, duration_s=24, reviewer="claude-code", review_wait_s=30)
+    store = ClipStore(tmp_path)
+    claude_code.review_pending(cfg.tune, tmp_path, claude="claude", run=FakeClaude())  # the timer has run once
+    monkeypatch.setattr(claude_code.QueueReviewer, "poll_s", 0.05)
+    tuner = session.Tuner(cfg, FakeRecorder(store, ROIS), store)
+    tuner._wait = lambda s: None
+    stop = threading.Event()
+
+    def timer():
+        while not stop.is_set():
+            claude_code.review_pending(cfg.tune, tmp_path, claude="claude", run=FakeClaude())
+            stop.wait(0.05)
+
+    t = threading.Thread(target=timer)
+    t.start()
+    try:
+        tuner._round("20261109T190000Z", 1, 24.0)
+    finally:
+        stop.set()
+        t.join()
+    r = tuner.report(tuner.reports()[0]["id"])
+    assert r["reviewed"] == r["moments"] >= 5
+    assert r["reviewer"]["model"].startswith("Claude Code") and r["reviewer"]["calls"] >= 1
+    assert r["accuracy"]["live"]["fields"]["northbound"]["accuracy"] == 0.0
