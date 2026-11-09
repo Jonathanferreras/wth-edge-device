@@ -264,6 +264,11 @@ below 20%, the oldest clips that aren't kept are deleted. Settings live in `[rec
 and saves them to `rois.toml` on the Pi. The boxes are `bridge` (near leaf), `far_leaf`,
 `boat`, `northbound` and `southbound` (the approach lanes up to their gates), and `deck`.
 
+Above the feed there's a tab for every box in the site config (new boxes show up on their
+own). A box's tab shows that box zoomed in, cut from the full-resolution frame, next to the
+full view with just that box drawn, plus what its detector reads right now. The same crop is
+at `/roi/<name>.jpg`, and `stream.mjpg?roi=<name>` streams it.
+
 ### Import the old dataset
 
 The clips from `wth-inference-training/dataset` can be brought into the same layout, so
