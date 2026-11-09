@@ -29,6 +29,8 @@ from ..recording import RecordingError
 
 BOUNDARY = "wthframe"
 DETECT_COLOUR = (239, 68, 68)
+CAR_MOVING_COLOUR = (245, 245, 247)
+CAR_STILL_COLOUR = (255, 159, 10)
 ROI_COLOURS = [(33, 209, 159), (250, 204, 21), (96, 165, 250), (244, 114, 182), (167, 139, 250), (251, 146, 60), (45, 212, 191)]
 
 
@@ -64,32 +66,62 @@ def crop_roi(frame, roi: Roi) -> np.ndarray:
     return hires.rgb()[y1:max(y2, y1 + 1), x1:max(x2, x1 + 1)]
 
 
-def encode_roi_jpeg(frame, roi: Roi, quality: int) -> bytes:
+def detections(det: dict | None) -> list[tuple[tuple, tuple, int, str | None]]:
+    """What the detectors found, as (frame-fraction box, colour, line width, label)."""
+    if not det:
+        return []
+    out = []
+    for v in det.get("vehicles") or []:
+        moving = v.get("moving")
+        out.append((tuple(v["box"]), CAR_MOVING_COLOUR if moving else CAR_STILL_COLOUR, 2, None if moving else "stopped"))
+    boat = det.get("boat") or {}
+    if box := boat.get("box"):
+        label = f"boat {boat.get('confidence', 0):.2f}" + (f" {boat['direction']}" if boat.get("direction") else "")
+        out.append((tuple(box), DETECT_COLOUR, 3, label))
+    return out
+
+
+def encode_roi_jpeg(frame, roi: Roi, quality: int, det: dict | None = None) -> bytes:
+    """The ROI zoomed in; with ``det`` the cars and boats inside it are boxed."""
     img = Image.fromarray(np.ascontiguousarray(crop_roi(frame, roi)))
     if img.width > ROI_ZOOM_MAX_WIDTH:
         img = img.resize((ROI_ZOOM_MAX_WIDTH, max(1, round(img.height * ROI_ZOOM_MAX_WIDTH / img.width))))
+    found = detections(det)
+    if found:
+        img = img.convert("RGB")
+        d = ImageDraw.Draw(img)
+        W, H = img.width, img.height
+        for box, colour, width, label in found:
+            # Frame fractions to crop pixels, kept to the boxes that overlap this ROI.
+            x1, y1 = (box[0] - roi.x) / roi.w * W, (box[1] - roi.y) / roi.h * H
+            x2, y2 = (box[2] - roi.x) / roi.w * W, (box[3] - roi.y) / roi.h * H
+            if x2 <= 0 or y2 <= 0 or x1 >= W or y1 >= H:
+                continue
+            d.rectangle((max(0, x1), max(0, y1), min(W - 1, x2), min(H - 1, y2)), outline=colour, width=width * 2)
+            if label:
+                d.text((max(0, x1) + 4, max(0, y1) + 3), label, fill=colour)
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=quality)
     return buf.getvalue()
 
 
 def encode_jpeg(image, quality: int, rois: dict | None = None, det: dict | None = None,
-                only: str | None = None) -> bytes:
-    """JPEG of a frame; with ``rois`` draws the boxes (just ``only`` when given), with ``det`` what the detectors see."""
+                only: str | None = None, boxes: bool = True) -> bytes:
+    """JPEG of a frame; with ``rois`` and ``boxes`` draws the ROIs (just ``only`` when given),
+    with ``det`` what the detectors see: leaf lines, lane levels, cars and boats."""
     img = Image.fromarray(image)
-    if rois or det:
+    if (rois and boxes) or det:
         img = img.convert("RGB")
         d = ImageDraw.Draw(img)
         W, H = img.width, img.height
         for i, (name, roi) in enumerate((rois or {}).items()):
-            if only and name != only:
+            if not boxes or (only and name != only):
                 continue
             box = roi.to_pixels(W, H)
             colour = ROI_COLOURS[i % len(ROI_COLOURS)]
             d.rectangle(box, outline=colour, width=2)
             d.text((box[0] + 4, box[1] + 2), name, fill=colour)
         if det:
-            boat = det.get("boat") or {}
             for leaf in (det.get("bridge") or {}, det.get("far_leaf") or {}):
                 if line := leaf.get("line"):
                     d.line((line[0] * W, line[1] * H, line[2] * W, line[3] * H), fill=DETECT_COLOUR, width=3)
@@ -101,11 +133,11 @@ def encode_jpeg(image, quality: int, rois: dict | None = None, det: dict | None 
                     d.text((box[0] + 4, box[3] - 12), f"{lane['level']} {lane.get('flow') or 0:.3f}", fill=DETECT_COLOUR)
             if (opening := det.get("opening")) and opening.get("phase"):
                 d.text((6, H - 14), f"{opening['phase']} · {opening.get('position', '')}", fill=DETECT_COLOUR)
-            if box := boat.get("box"):
+            for box, colour, width, label in detections(det):
                 px = (box[0] * W, box[1] * H, box[2] * W, box[3] * H)
-                d.rectangle(px, outline=DETECT_COLOUR, width=3)
-                label = f"boat {boat.get('confidence', 0):.2f}" + (f" {boat['direction']}" if boat.get("direction") else "")
-                d.text((px[0] + 3, max(0, px[1] - 12)), label, fill=DETECT_COLOUR)
+                d.rectangle(px, outline=colour, width=width)
+                if label and colour == DETECT_COLOUR:  # car labels would cover the lane at this size
+                    d.text((px[0] + 3, max(0, px[1] - 12)), label, fill=colour)
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=quality)
     return buf.getvalue()
@@ -148,12 +180,15 @@ def create_app(config, bus: FrameBus, get_state: Callable[[], dict[str, Any]], r
         return JSONResponse(st)
 
     @app.get("/snapshot.jpg", dependencies=[Depends(auth)])
-    def snapshot(overlay: int = 1, only: str | None = None) -> Response:
+    def snapshot(overlay: int = 1, only: str | None = None, boxes: int | None = None, det: int | None = None) -> Response:
+        """``overlay`` turns both layers on or off; ``boxes`` (the ROIs) and ``det`` (what the
+        detectors found) override it one at a time."""
         frame = bus.latest()
         if frame is None:
             raise HTTPException(503, "no camera frame yet")
-        return Response(encode_jpeg(frame.image, wcfg.jpeg_quality, rois if overlay else None,
-                                    get_state() if overlay else None, only), media_type="image/jpeg")
+        b, dt = overlay if boxes is None else boxes, overlay if det is None else det
+        return Response(encode_jpeg(frame.image, wcfg.jpeg_quality, rois, get_state() if dt else None, only, bool(b)),
+                        media_type="image/jpeg")
 
     def need_roi(name: str) -> Roi:
         if name not in rois:
@@ -161,9 +196,11 @@ def create_app(config, bus: FrameBus, get_state: Callable[[], dict[str, Any]], r
         return rois[name]
 
     @app.get("/stream.mjpg", dependencies=[Depends(auth)])
-    async def stream(request: Request, overlay: int = 1, only: str | None = None,
-                     roi: str | None = None) -> StreamingResponse:
-        """The live view; ``roi`` streams that box zoomed in instead, ``only`` draws just that box."""
+    async def stream(request: Request, overlay: int = 1, only: str | None = None, roi: str | None = None,
+                     boxes: int | None = None, det: int | None = None) -> StreamingResponse:
+        """The live view; ``roi`` streams that box zoomed in instead, ``only`` draws just that box.
+        ``boxes`` and ``det`` work as on the snapshot."""
+        show_boxes, show_det = bool(overlay if boxes is None else boxes), bool(overlay if det is None else det)
         if roi is not None:
             need_roi(roi)
         period = 1.0 / max(wcfg.preview_fps, 0.5)
@@ -176,10 +213,11 @@ def create_app(config, bus: FrameBus, get_state: Callable[[], dict[str, Any]], r
                 if frame is not None and frame.seq != last_seq:
                     last_seq = frame.seq
                     if roi is not None:
-                        jpg = await asyncio.to_thread(encode_roi_jpeg, frame, rois[roi], wcfg.jpeg_quality)
+                        jpg = await asyncio.to_thread(encode_roi_jpeg, frame, rois[roi], wcfg.jpeg_quality,
+                                                      get_state() if show_det else None)
                     else:
-                        jpg = await asyncio.to_thread(encode_jpeg, frame.image, wcfg.jpeg_quality,
-                                                      rois if overlay else None, get_state() if overlay else None, only)
+                        jpg = await asyncio.to_thread(encode_jpeg, frame.image, wcfg.jpeg_quality, rois,
+                                                      get_state() if show_det else None, only, show_boxes)
                     yield (
                         f"--{BOUNDARY}\r\nContent-Type: image/jpeg\r\nContent-Length: {len(jpg)}\r\n\r\n".encode()
                         + jpg
@@ -190,12 +228,13 @@ def create_app(config, bus: FrameBus, get_state: Callable[[], dict[str, Any]], r
         return StreamingResponse(frames(), media_type=f"multipart/x-mixed-replace; boundary={BOUNDARY}")
 
     @app.get("/roi/{name}.jpg", dependencies=[Depends(auth)])
-    def roi_snapshot(name: str) -> Response:
+    def roi_snapshot(name: str, det: int = 0) -> Response:
         box = need_roi(name)
         frame = bus.latest()
         if frame is None:
             raise HTTPException(503, "no camera frame yet")
-        return Response(encode_roi_jpeg(frame, box, wcfg.jpeg_quality), media_type="image/jpeg")
+        return Response(encode_roi_jpeg(frame, box, wcfg.jpeg_quality, get_state() if det else None),
+                        media_type="image/jpeg")
 
     # ---- recording ----
     def need_recorder():

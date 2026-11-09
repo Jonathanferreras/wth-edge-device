@@ -68,3 +68,25 @@ def test_roi_zoom_crops_hires_yuv():
     right = crop_roi(frame, Roi(0.6, 0.5, 0.4, 0.5))
     assert left.shape == (180, 256, 3) and right.shape == (180, 256, 3)
     assert left.mean() < 30 and right.mean() > 200
+
+
+def test_detection_layer_draws_cars(monkeypatch):
+    monkeypatch.setenv("WTH_WEB_PASSWORD", "")
+    cfg = cfgmod.from_dict({"site": {"rois": {"northbound": {"x": 0.25, "y": 0.25, "w": 0.5, "h": 0.5}}}})
+    bus = FrameBus()
+    state = new_state("t", "2.0")
+    state["vehicles"] = [{"box": [0.4, 0.4, 0.6, 0.6], "moving": True, "lane": "northbound"}]
+    client = TestClient(create_app(cfg, bus, lambda: state))
+    bus.publish(np.zeros((90, 160, 3), dtype=np.uint8))
+
+    def bright(url):
+        import io
+
+        from PIL import Image
+        return np.asarray(Image.open(io.BytesIO(client.get(url).content)).convert("L")).max()
+
+    assert bright("/snapshot.jpg?boxes=0&det=0") < 30
+    assert bright("/snapshot.jpg?boxes=0&det=1") > 150  # the car box, in white
+    assert bright("/roi/northbound.jpg") < 30
+    assert bright("/roi/northbound.jpg?det=1") > 150
+    assert state["vehicles"] and client.get("/snapshot.jpg?overlay=0").status_code == 200
