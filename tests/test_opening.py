@@ -277,3 +277,23 @@ def test_pipeline_builds_signals_from_lanes_and_leaves():
     assert s.northbound == "standstill" and s.southbound == "standstill" and s.deck_clear is True
     assert pipe.state()["opening"]["phase"] == "gates_down"
     assert pipe.state()["opening"]["website"]["northBoundTraffic"] == "standstill"
+
+
+def test_leaf_reading_with_traffic_flowing_is_not_an_opening():
+    # A pole in the far-leaf box reads as a leaf at 88 degrees while cars drive on.
+    m = machine()
+    s = flowing("heavy", "heavy")
+    s.leaf_angles, s.leaf_positions = {"near": 18, "far": 88}, {"near": "closed", "far": "open"}
+    events, _ = run(m, [(5, flowing()), (120, s)])
+    assert [e["phase"] for e in events] == ["flowing"]
+    assert m.website()["position"] == "closed"
+
+
+def test_traffic_flowing_both_ways_ends_an_opening():
+    m = machine(release_hold_s=10)
+    events, t = run(m, [(5, flowing()), (30, stopped()), (20, leaves(5, 60, rate_far=2.0))])
+    assert m.phase == "lifting"
+    s = flowing("heavy", "heavy")
+    s.leaf_angles, s.leaf_positions = {"near": 5, "far": 60}, {"near": "closed", "far": "open"}
+    events, _ = run(m, [(15, s)], t0=t)
+    assert [e["phase"] for e in events] == ["flowing"]

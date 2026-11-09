@@ -166,6 +166,16 @@ class OpeningMachine:
         deck_ok = s.deck_clear is None or s.deck_clear
         either_moving = bool(s.northbound_moving) or bool(s.southbound_moving) or bool(s.deck_moving)
         boat = s.boat_present or s.ais_eta_s is not None
+        flowing = [lv not in ("standstill", "unknown") and bool(mv)
+                   for lv, mv in ((s.northbound, s.northbound_moving), (s.southbound, s.southbound_moving))]
+
+        # Cars flowing and the bridge moving can't both be true: the gates stop traffic
+        # before a leaf lifts. Traffic flowing in both directions ends an opening (the leaf
+        # reading was wrong); either direction flowing means a leaf reading can't start one.
+        if self.phase in ("lifting", "raised", "lowering") and all(flowing):
+            return "flowing", cfg.release_hold_s
+        if self.phase not in ("lifting", "raised", "lowering") and any(flowing):
+            leaves = None
 
         if leaves == "moving_up":
             return "lifting", self.bridge_cfg.hold_s
