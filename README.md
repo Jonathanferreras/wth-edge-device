@@ -233,11 +233,28 @@ Why 5-minute chunks: each one is reviewed while the next records, so the report 
 soon after the hour; a crash loses at most 5 minutes; and the replay stitches the chunks
 back into one timeline, so an opening across a chunk boundary still reads as one.
 
-The review needs an API key: put `ANTHROPIC_API_KEY=...` in `/etc/wth/secrets.env` and
-restart. Without one it still records, counts and reports, but doesn't tune. Each moment is
-one request with two images, so an hour (`max_reviews` = 360 moments) is roughly 1M input
-tokens; the model is `[tune] model` (Claude Opus 5.5 by default, at low effort). It needs
-recording to be on and about 2 GB free for an hour of video.
+**Who reviews:** Claude Code on the Pi, logged in as you. The service can't use your login
+(it runs as `wth`), so the two meet in a queue folder, `/var/lib/wth/tune/queue`: the
+service drops each chunk's frame pairs there, and `wth-tune-review.timer` runs
+`wth-edge tune-review` as you every 2 minutes. That runs `claude -p` on 12 moments at a time
+(it reads the frames with its Read tool and answers in a fixed JSON shape) and writes the
+labels back. install.sh sets the timer up for the user who ran `sudo` (`--review-user NAME`
+for another) and adds that user to group `wth`. Claude Code has to be installed and logged
+in for that user (`claude` once in a terminal). It counts against your Claude plan's usage:
+an hour is up to 360 moments, about 30 runs. If the plan's limit is hit, the rest waits for
+the next run; after `review_wait_s` (3 h) the round goes on with what was labelled.
+The panel says whether the timer is alive. To check by hand:
+
+```sh
+systemctl list-timers wth-tune-review.timer
+journalctl -u wth-tune-review.service --since "1 hour ago"
+wth-edge tune-review        # one run now, as yourself
+```
+
+`[tune] reviewer = "api"` uses the Anthropic API from the service instead (needs
+`ANTHROPIC_API_KEY` in `/etc/wth/secrets.env`, billed per token); `"none"` records, counts
+and reports without tuning. Self-tuning needs recording to be on and about 2 GB free for an
+hour of video.
 
 ## Publishing to Firestore
 
