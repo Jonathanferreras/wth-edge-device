@@ -78,6 +78,9 @@ class Pipeline:
                                  require_travel=self.yolo is None) if boat.enabled else None
         self._last_yolo = 0.0
         self._last_motion_at: float | None = None
+        self._box_motion_at: dict[str, float] = {}
+        self._crossing_box: str | None = None   # the box the current crossing was last seen in
+        self._idle_turn = 0
         self.last_ms: float = 0.0
         self.last_t: float | None = None
 
@@ -122,7 +125,11 @@ class Pipeline:
             cfg = self.config.boat_detector
             # The motion gates are cheap and keep learning the river in every stage, so they
             # don't fire on a stale background when the watch starts.
-            moving = _best(self.motion[name].update(frame, rois[name]) for name in boat_rois)
+            seen = {name: self.motion[name].update(frame, rois[name]) for name in boat_rois}
+            for name, sighting in seen.items():
+                if sighting is not None:
+                    self._box_motion_at[name] = t
+            moving = _best(seen.values())
             if moving is not None:
                 self._last_motion_at = t
             if not boats_on:
@@ -136,7 +143,7 @@ class Pipeline:
                 if hz > 0 and t - self._last_yolo >= 1.0 / hz:
                     self._last_yolo = t
                     src = hires.rgb() if hires is not None else frame
-                    events += self.boats.update(t, _best(self.yolo.detect(src, rois[name]) for name in boat_rois))
+                    events += self.boats.update(t, self._yolo_look(t, src, boat_rois))
                 else:
                     events += self.boats.tick(t)
             else:
@@ -147,6 +154,25 @@ class Pipeline:
             events += self.machine.update(t, self.signals(ais))
         self.last_ms = (time.perf_counter() - t0) * 1000
         return events
+
+    def _yolo_look(self, t: float, src, boat_rois: list[str]):
+        """One model look. The model is the expensive part (~0.7 s a box on a Pi 5), so it
+        runs on the boxes where something just moved and the box holding the crossing; with
+        nothing going on it takes the boxes in turn."""
+        names = [n for n in boat_rois if t - self._box_motion_at.get(n, -1e9) < 2.0]
+        if self.boats.current is not None and self._crossing_box in boat_rois and self._crossing_box not in names:
+            names.append(self._crossing_box)
+        if not names:
+            names = [boat_rois[self._idle_turn % len(boat_rois)]]
+            self._idle_turn += 1
+        best, best_name = None, None
+        for name in names:
+            s = self.yolo.detect(src, self.rois[name])
+            if s is not None and (best is None or s.confidence > best.confidence):
+                best, best_name = s, name
+        if best is not None:
+            self._crossing_box = best_name
+        return best
 
     def _stage_inputs(self, ais: dict[str, Any] | None = None):
         from .stages import StageInputs

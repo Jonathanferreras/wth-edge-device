@@ -185,3 +185,30 @@ def test_boat_seen_in_the_near_box_only():
     assert started and started[0]["direction"] == "w2e"
     box = pipe.state()["boat"]["box"]
     assert box is not None and box[1] >= 0.7  # the sighting came from boat_near
+
+
+def test_model_looks_only_where_something_moved():
+    from wth_edge.detectors import Pipeline
+    from wth_edge.detectors.boat import Sighting
+
+    cfg = cfgmod.from_dict({"boat_detector": {"enabled": False},
+                            "site": {"rois": {"boat": {"x": 0, "y": 0, "w": 1, "h": 0.3},
+                                              "boat_near": {"x": 0.5, "y": 0.7, "w": 0.5, "h": 0.3}}}})
+    pipe = Pipeline(cfg)
+    looked = []
+
+    class FakeYolo:
+        def detect(self, src, roi):
+            looked.append(roi.y)
+            return Sighting((0.6, 0.8, 0.7, 0.9), 0.9, "yolo") if roi.y == 0.7 else None
+
+    from wth_edge.detectors.boat import BoatTracker
+    pipe.yolo, pipe.boats = FakeYolo(), BoatTracker(cfgmod.BoatDetectorSection())
+    rois = ["boat", "boat_near"]
+    pipe._yolo_look(0.0, None, rois)          # idle: one box per look, in turn
+    pipe._yolo_look(1.0, None, rois)
+    assert looked == [0.0, 0.7]
+    looked.clear()
+    pipe._box_motion_at["boat_near"] = 5.0    # motion in the near box only
+    assert pipe._yolo_look(5.5, None, rois) is not None
+    assert looked == [0.7] and pipe._crossing_box == "boat_near"

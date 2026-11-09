@@ -80,7 +80,9 @@ Profiles today:
   deck only reports clear or busy. The panel shows live flow and fill per lane so the
   thresholds in `[traffic_detector]` can be tuned on the real view.
 - **Boats** (`boat`, plus `boat_near` for the river close to the camera; each box has its
-  own motion gate and model run, and the best sighting feeds one crossing tracker):
+  own motion gate; the model runs on the boxes that just moved or hold the crossing, and
+  takes them in turn when nothing moves, so two boxes cost about what one did; the best
+  sighting feeds one crossing tracker):
   background subtraction in the boat boxes wakes YOLOv8s (`models/yolov8s.onnx`,
   COCO class `boat`, run through OpenCV, no PyTorch). The model also runs every 2 s when
   nothing moves, because a slow tug blends into the background. Two hits start a
