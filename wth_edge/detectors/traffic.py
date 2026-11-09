@@ -192,17 +192,32 @@ class LaneTracker:
 
 
 class DeckTracker:
-    """Only "clear or not", for the gates-down test and the release."""
+    """Only "clear or not", for the gates-down test and the release.
+
+    Clear means one of two things: both lanes are at a standstill (the queue is held at the
+    gates), or genuinely no car has crossed the deck for ``deck_clear_s``. A window average
+    of the fill is not enough on its own: a few cars driving through barely move it, so the
+    deck read "clear" with cars passing. Any frame with a moving car blob, or with more
+    change than ``flow_min``, counts as a car passing.
+    """
 
     def __init__(self, cfg) -> None:
         self.cfg = cfg
         self._window: deque[tuple[float, LaneReading]] = deque()
         self.fill: float | None = None
         self.flow: float | None = None
+        self.last_car_at: float | None = None
+        self.lanes_standstill = False
+        self._t: float | None = None
 
-    def update(self, t: float, reading: LaneReading | None) -> None:
+    def update(self, t: float, reading: LaneReading | None, vehicles: list[Vehicle] | None = None,
+               lanes_standstill: bool = False) -> None:
+        self._t = t
+        self.lanes_standstill = lanes_standstill
         if reading is not None:
             self._window.append((t, reading))
+            if reading.flow >= self.cfg.flow_min or any(v.moving for v in vehicles or ()):
+                self.last_car_at = t
         while self._window and t - self._window[0][0] > self.cfg.window_s:
             self._window.popleft()
         if self._window:
@@ -212,12 +227,27 @@ class DeckTracker:
             self.fill = self.flow = None
 
     @property
+    def quiet_for(self) -> float | None:
+        """Seconds since a car last crossed the deck (since the first frame if none has)."""
+        if self._t is None or not self._window:
+            return None
+        since = self.last_car_at if self.last_car_at is not None else self._window[0][0]
+        return self._t - since
+
+    @property
     def clear(self) -> bool | None:
-        return None if self.fill is None else self.fill < self.cfg.deck_clear_max
+        if self.fill is None:
+            return None
+        if self.lanes_standstill:
+            return True
+        quiet = self.quiet_for
+        return self.fill < self.cfg.deck_clear_max and quiet is not None and quiet >= self.cfg.deck_clear_s
 
     @property
     def moving(self) -> bool | None:
         return None if self.flow is None else self.flow >= self.cfg.flow_min
 
     def state(self) -> dict[str, Any]:
-        return {"clear": self.clear, "moving": self.moving, "fill": self.fill, "flow": self.flow}
+        quiet = self.quiet_for
+        return {"clear": self.clear, "moving": self.moving, "fill": self.fill, "flow": self.flow,
+                "quiet_s": None if quiet is None else round(quiet, 1), "lanes_standstill": self.lanes_standstill}

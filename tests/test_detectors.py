@@ -225,3 +225,51 @@ def test_lane_watcher_boxes_cars():
     assert abs(x1 - 170 / 320) < 0.02 and abs(y1 - 100 / 180) < 0.02 and abs(x2 - 185 / 320) < 0.02 and abs(y2 - 110 / 180) < 0.02
     w.update(car, roi)  # parked: still there, no longer moving
     assert len(w.vehicles) == 2 and not any(v.moving for v in w.vehicles)
+
+
+# ---------------- deck clear
+
+
+def _deck():
+    from wth_edge.detectors.traffic import DeckTracker
+    return DeckTracker(cfgmod.TrafficDetectorSection(deck_clear_s=5, flow_min=0.003, deck_clear_max=0.03))
+
+
+def test_deck_is_busy_while_cars_pass_even_with_a_low_average_fill():
+    from wth_edge.detectors.traffic import LaneReading, Vehicle
+
+    deck = _deck()
+    car = [Vehicle((0.2, 0.6, 0.22, 0.62), True)]
+    for i in range(60):  # a car through every 2 s; the window fill stays tiny
+        passing = i % 10 == 0
+        deck.update(i * 0.2, LaneReading(0.02 if passing else 0.0, 0.05 if passing else 0.0), car if passing else [])
+        assert deck.clear is False or i < 1
+    assert deck.fill < 0.03  # the old rule would have called this clear
+
+
+def test_deck_clears_after_no_car_for_deck_clear_s():
+    from wth_edge.detectors.traffic import LaneReading, Vehicle
+
+    deck = _deck()
+    deck.update(0.0, LaneReading(0.02, 0.05), [Vehicle((0.2, 0.6, 0.22, 0.62), True)])
+    t = 0.0
+    while t < 4.8:
+        t += 0.2
+        deck.update(t, LaneReading(0.0, 0.0), [])
+    assert deck.clear is False
+    for _ in range(2):
+        t += 0.2
+        deck.update(t, LaneReading(0.0, 0.0), [])
+    # The window still holds the car's fill (6 s); clear once that has gone too.
+    while deck.fill >= 0.03 or t < 7:
+        t += 0.2
+        deck.update(t, LaneReading(0.0, 0.0), [])
+    assert deck.clear is True
+
+
+def test_deck_is_clear_when_both_lanes_stand_still():
+    from wth_edge.detectors.traffic import LaneReading, Vehicle
+
+    deck = _deck()
+    deck.update(0.0, LaneReading(0.02, 0.2), [Vehicle((0.2, 0.6, 0.22, 0.62), True)], lanes_standstill=True)
+    assert deck.clear is True and deck.state()["lanes_standstill"] is True
