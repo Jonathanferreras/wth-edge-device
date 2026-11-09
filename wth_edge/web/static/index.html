@@ -3,152 +3,344 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
 <title>WTH device</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
 <style>
   :root {
-    --bg: #0a1428; --panel: #13203a; --line: #22324f; --ink: #eef0f4; --quiet: #96a0af;
-    --ok: #21d19f; --warn: #facc15; --bad: #ef4444; --copper: #c87832; --accent: #60a5fa;
+    --bg: #000; --card: #1c1c1e; --tile: #2a2a2d; --tile-2: #333336; --line: rgba(255, 255, 255, .08);
+    --line-2: rgba(255, 255, 255, .14); --ink: #f5f5f7; --quiet: #9a9aa0; --faint: #6b6b70;
+    --ok: #34c759; --warn: #ffcc00; --bad: #ff453a; --orange: #ff9f0a; --copper: #c87832; --accent: #5e9eff;
+    --r-lg: 22px; --r-md: 16px; --r-sm: 12px;
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, -apple-system, Segoe UI, sans-serif; }
-  header { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
-  header h1 { margin: 0; font-size: 17px; color: var(--copper); letter-spacing: .04em; }
-  header .id { color: var(--quiet); font-size: 13px; }
-  .pill { padding: 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; background: var(--line); }
-  #status { margin-left: auto; }
-  .pill.ok { background: color-mix(in srgb, var(--ok) 20%, transparent); color: var(--ok); }
-  .pill.degraded, .pill.starting { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
-  .pill.offline, .pill.rec { background: color-mix(in srgb, var(--bad) 22%, transparent); color: var(--bad); }
-  main { display: grid; grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); gap: 16px; padding: 16px; max-width: 1280px; margin: 0 auto; }
-  @media (max-width: 820px) { main { grid-template-columns: 1fr; } }
-  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; }
-  h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: var(--quiet); }
-  .frame { position: relative; }
-  .frame img { width: 100%; display: block; border-radius: 6px; background: #000; aspect-ratio: 16 / 9; object-fit: contain; }
-  .frame canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: none; display: none; }
-  .editing .frame canvas { display: block; }
-  .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; color: var(--quiet); font-size: 13px; }
-  button, select, input[type=text] { font: inherit; color: var(--ink); background: var(--line); border: 1px solid #33466b; border-radius: 6px; padding: 6px 12px; }
+  html, body { background: var(--bg); }
+  body { margin: 0; color: var(--ink); font: 15px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", Inter, system-ui, "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+  button, select, input { font: inherit; color: inherit; }
   button { cursor: pointer; }
-  button.primary { background: var(--bad); border-color: var(--bad); color: #fff; font-weight: 600; }
-  button.go { background: var(--ok); border-color: var(--ok); color: #062018; font-weight: 600; }
   button:disabled { opacity: .45; cursor: not-allowed; }
-  input[type=text] { flex: 1; min-width: 140px; }
-  dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; }
-  dt { color: var(--quiet); }
-  dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
-  .big { font-size: 26px; font-weight: 700; text-transform: uppercase; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
   .ok { color: var(--ok); } .bad { color: var(--bad); } .warn { color: var(--warn); }
-  .stack { display: grid; gap: 16px; align-content: start; }
-  .note { color: var(--quiet); font-size: 12px; margin-top: 8px; }
-  .wide { grid-column: 1 / -1; }
-  .clips { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
-  .clip { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: #0e1930; }
+
+  /* ---------- top bar */
+  .top { display: flex; align-items: center; gap: 14px; padding: 12px 24px; border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 1000; background: rgba(0, 0, 0, .82); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); }
+  .logo { width: 34px; height: 34px; border-radius: 9px; background: linear-gradient(145deg, #d98a45, #a35d22); display: grid; place-items: center; flex: none; }
+  .brand { font-size: 19px; font-weight: 700; letter-spacing: -.01em; white-space: nowrap; }
+  .divider { width: 1px; height: 22px; background: var(--line-2); }
+  .device { color: var(--quiet); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .top .right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+  .chip { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); font-weight: 600; font-size: 14px; white-space: nowrap; text-decoration: none; color: var(--ink); }
+  .chip .sub { color: var(--quiet); font-weight: 500; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
+  .ok > .dot, .dot.ok { background: var(--ok); } .warn > .dot, .dot.warn { background: var(--warn); } .bad > .dot, .dot.bad { background: var(--bad); }
+  .chip.ok, .chip.warn, .chip.bad { color: var(--ink); }
+  #recpill { color: var(--bad); }
+  #recpill .dot { background: var(--bad); }
+
+  /* ---------- layout */
+  .layout { display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr); gap: 24px; padding: 24px; max-width: 1760px; margin: 0 auto; align-items: start; }
+  @media (max-width: 980px) { .layout { grid-template-columns: minmax(0, 1fr); padding: 16px; gap: 16px; } .content { order: -1; } .top { padding: 10px 16px; } .device, .divider { display: none; } }
+  .side { display: grid; gap: 20px; }
+  .content { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; min-width: 0; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 20px; }
+  .card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 0 14px; }
+  .card-head h2 { margin: 0; font-size: 19px; font-weight: 700; letter-spacing: -.01em; }
+  .card-head .sub { color: var(--quiet); font-size: 14px; text-align: right; }
+  .note { color: var(--quiet); font-size: 13px; }
+
+  /* ---------- bridge hero */
+  .hero { text-align: center; padding-top: 26px; }
+  .ring { width: 150px; height: 150px; margin: 0 auto 14px; border-radius: 50%; display: grid; place-items: center; background: radial-gradient(circle, #3a3a3d 0 54%, #2c2c2f 55% 100%); color: var(--quiet); transition: color .3s; }
+  .ring svg { width: 58px; height: 58px; }
+  .ring.ok { color: var(--ok); } .ring.warn { color: var(--warn); } .ring.bad { color: var(--bad); }
+  .hero h1 { margin: 0; font-size: 30px; font-weight: 700; letter-spacing: -.02em; text-transform: capitalize; }
+  .hero .phase { color: var(--ink); opacity: .85; font-size: 15px; margin-top: 2px; text-transform: capitalize; min-height: 1em; }
+  .hero .note { margin-top: 6px; }
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line-2); }
+  .step { display: grid; justify-items: center; gap: 8px; font-weight: 600; font-size: 14px; color: var(--quiet); }
+  .step .n { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--tile); font-size: 13px; }
+  .step.on { color: var(--ink); }
+  .step.on .n { background: var(--ink); color: #000; }
+  #stagenote { margin-top: 12px; min-height: 1em; }
+
+  /* ---------- status tiles */
+  .tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .tile { background: var(--tile); border-radius: var(--r-md); padding: 14px; min-height: 118px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .tile .top-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 6px; }
+  .icon { width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; background: #33415c; color: #8fb4ff; flex: none; }
+  .icon svg { width: 20px; height: 20px; }
+  .icon.green { background: #24452f; color: #5fd47d; } .icon.amber { background: #4a3d1c; color: #f5c84b; } .icon.violet { background: #3a3156; color: #b5a0ff; } .icon.teal { background: #1f4442; color: #4fd1c5; } .icon.red { background: var(--bad); color: #fff; }
+  .badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; background: rgba(0, 0, 0, .28); font-size: 12.5px; font-weight: 600; white-space: nowrap; text-transform: capitalize; }
+  .badge.ok { color: #d6f5de; } .badge.warn { color: #fff0b3; } .badge.bad { color: #ffc7c2; } .badge.warn.orange > .dot { background: var(--orange); }
+  .tile .t { font-size: 17px; font-weight: 600; letter-spacing: -.01em; margin-top: auto; }
+  .tile .s { color: var(--quiet); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile.wide { grid-column: 1 / -1; min-height: 0; }
+
+  /* ---------- recording */
+  .rec-fields { display: flex; gap: 8px; margin-bottom: 12px; }
+  .field { background: var(--tile); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 9px 12px; min-width: 0; }
+  select.field { flex: none; max-width: 45%; }
+  input.field { flex: 1; }
+  .rec-btn { width: 100%; text-align: left; border: 0; border-radius: var(--r-md); padding: 16px; min-height: 118px; display: flex; flex-direction: column; gap: 2px; background: #4a1f1d; color: var(--ink); }
+  .rec-btn .icon { margin-bottom: auto; }
+  .rec-btn .t { font-size: 17px; font-weight: 600; margin-top: 18px; }
+  .rec-btn .s { color: #e9b8b3; font-size: 13px; }
+  .rec-btn.on { background: #1f3d29; }
+  .rec-btn.on .icon { background: var(--ok); }
+  .rec-btn.on .s { color: #b8e6c4; }
+  #recnote { margin-top: 10px; }
+  #recnote.bad { color: var(--bad); }
+
+  /* ---------- telemetry */
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 9px 14px; margin: 0; font-size: 14px; }
+  dt { color: var(--quiet); }
+  dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  #auth { margin-top: 12px; color: var(--warn); }
+
+  /* ---------- tabs */
+  .tabsbar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .tabs { display: flex; gap: 4px; padding: 4px; background: var(--card); border: 1px solid var(--line); border-radius: 999px; overflow-x: auto; max-width: 100%; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { display: inline-flex; align-items: center; gap: 9px; border: 0; background: transparent; padding: 9px 16px; border-radius: 999px; font-weight: 600; font-size: 15px; color: var(--quiet); white-space: nowrap; text-transform: capitalize; }
+  .tab:hover { color: var(--ink); }
+  .tab[aria-selected="true"] { background: var(--tile-2); color: var(--ink); }
+  .tab .dot { width: 9px; height: 9px; }
+  .tabhint { color: var(--quiet); font-size: 14px; margin-left: auto; text-align: right; }
+
+  /* ---------- feeds */
+  .feeds { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .feeds.split { grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); }
+  @media (max-width: 1200px) { .feeds.split { grid-template-columns: 1fr; } }
+  .feed { position: relative; background: #0b0b0c; border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; aspect-ratio: 16 / 9; }
+  /* The zoomed feed takes the box's own shape (within limits) so a wide lane box isn't letterboxed. */
+  .feed.zoom { aspect-ratio: var(--zoom-aspect, 16 / 9); max-height: 72vh; }
+  .feed img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; }
+  .feed canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: none; display: none; }
+  .editing .feed canvas { display: block; }
+  .feed .waiting { position: absolute; inset: 0; display: grid; place-items: center; color: var(--quiet); font-size: 15px; }
+  .ov { position: absolute; display: flex; gap: 6px; align-items: center; z-index: 2; }
+  .ov.tl { top: 14px; left: 14px; } .ov.tr { top: 14px; right: 14px; } .ov.bl { bottom: 14px; left: 16px; }
+  .glass { background: rgba(28, 28, 30, .72); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 999px; padding: 7px 13px; font-size: 14px; font-weight: 600; color: #e8e8ea; display: inline-flex; align-items: center; gap: 8px; }
+  .seg { display: inline-flex; padding: 3px; gap: 2px; background: rgba(28, 28, 30, .72); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 999px; }
+  .seg button { border: 0; background: transparent; color: var(--quiet); font-weight: 600; font-size: 14px; padding: 5px 12px; border-radius: 999px; }
+  .seg button[aria-pressed="true"] { background: rgba(255, 255, 255, .14); color: var(--ink); }
+  #feedlabel { text-transform: capitalize; }
+  .caption { font-size: 12px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; text-shadow: 0 1px 6px rgba(0, 0, 0, .8); }
+  .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; color: var(--quiet); font-size: 14px; }
+  .btn { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 999px; padding: 8px 16px; font-weight: 600; font-size: 14px; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+  .btn:hover { background: var(--tile); }
+  .btn.go { background: var(--ok); border-color: var(--ok); color: #04210d; }
+  .btn.danger { background: var(--bad); border-color: var(--bad); color: #fff; }
+  #editmsg.bad { color: var(--bad); }
+
+  /* ---------- detail */
+  .sechead { display: flex; align-items: baseline; gap: 12px; margin: 6px 2px 0; flex-wrap: wrap; }
+  .sechead h2 { margin: 0; text-transform: capitalize; font-size: 21px; font-weight: 700; letter-spacing: -.01em; }
+  .sechead span { color: var(--quiet); font-size: 15px; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); padding: 16px; }
+  .readings { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+  .reading { background: var(--tile); border-radius: var(--r-sm); padding: 12px 14px; display: grid; gap: 2px; text-align: left; border: 0; color: var(--ink); min-width: 0; }
+  button.reading:hover { background: var(--tile-2); }
+  .reading .k { color: var(--quiet); font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; display: flex; align-items: center; gap: 7px; }
+  .reading .v { font-size: 18px; font-weight: 600; text-transform: capitalize; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .reading .s { color: var(--quiet); font-size: 13px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .empty { color: var(--quiet); text-align: center; padding: 22px; }
+  .lv-light { color: var(--ok); } .lv-moderate { color: var(--warn); } .lv-heavy { color: var(--orange); } .lv-standstill { color: var(--bad); } .lv-unknown { color: var(--quiet); }
+
+  /* ---------- AIS + clips */
+  #map { height: 340px; border-radius: var(--r-md); background: #111; }
+  .leaflet-container { font: inherit; background: #111; }
+  .leaflet-tile-pane { filter: invert(1) hue-rotate(180deg) brightness(.85) contrast(.9) saturate(.6); }
+  .vessels { display: grid; gap: 6px; margin-top: 12px; font-size: 14px; }
+  .vessels div { display: flex; gap: 12px; flex-wrap: wrap; color: var(--quiet); }
+  .vessels .n { font-weight: 600; min-width: 150px; color: var(--ink); }
+  .clips { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+  .clip { background: var(--tile); border: 1px solid transparent; border-radius: var(--r-md); overflow: hidden; }
   .clip img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; display: block; background: #000; cursor: pointer; }
-  .clip .meta { padding: 8px 10px; font-size: 13px; display: grid; gap: 4px; }
-  .clip .meta .t { font-weight: 600; }
+  .clip .meta { padding: 10px 12px 6px; font-size: 13px; display: grid; gap: 3px; }
+  .clip .meta .t { font-weight: 600; font-size: 14px; }
   .clip .meta .s { color: var(--quiet); }
-  .clip .acts { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 10px 10px; }
-  .clip .acts button, .clip .acts a { font-size: 12px; padding: 4px 8px; }
-  .clip.kept { border-color: var(--ok); }
-  a.btn { color: var(--ink); background: var(--line); border: 1px solid #33466b; border-radius: 6px; text-decoration: none; }
-  dialog { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; padding: 12px; max-width: min(960px, 96vw); }
-  dialog video { width: 100%; display: block; border-radius: 6px; background: #000; }
-  dialog::backdrop { background: rgba(0, 0, 0, .6); }
-  .lanes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
-  .lane { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
-  .lane .k { color: var(--quiet); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
-  .lane .v { font-weight: 700; text-transform: capitalize; }
-  .lv-light { color: var(--ok); } .lv-moderate { color: var(--warn); } .lv-heavy { color: #f97316; } .lv-standstill { color: var(--bad); } .lv-unknown { color: var(--quiet); }
-  .phase { font-size: 22px; font-weight: 700; text-transform: capitalize; }
-  #map { height: 320px; border-radius: 6px; background: #0e1930; }
-  .vessels { display: grid; gap: 4px; margin-top: 10px; font-size: 13px; }
-  .vessels div { display: flex; gap: 10px; flex-wrap: wrap; }
-  .vessels .n { font-weight: 600; min-width: 140px; }
-  .leaflet-container { font: inherit; }
+  .clip .acts { display: flex; gap: 6px; flex-wrap: wrap; padding: 6px 12px 12px; }
+  .clip .acts .btn { font-size: 12.5px; padding: 5px 11px; background: var(--tile-2); }
+  .clip.kept { border-color: rgba(52, 199, 89, .55); }
+  dialog { background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 14px; max-width: min(1080px, 96vw); }
+  dialog video { width: 100%; display: block; border-radius: var(--r-sm); background: #000; }
+  dialog::backdrop { background: rgba(0, 0, 0, .7); }
+  dialog .toolbar { margin-top: 12px; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .tab, .btn, .reading, .seg button { transition: background-color .15s, color .15s; }
+  }
 </style>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 </head>
 <body>
-<header>
-  <h1>WATCH THE HUTCH</h1>
-  <span class="id" id="device">…</span>
-  <span class="pill rec" id="recpill" hidden>● REC</span>
-  <span class="pill" id="status">…</span>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-bridge" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 16h20M4 16v4M20 16v4M6 16 11 8M18 16 13 8"/><path d="M2 20c2 0 2-1 4-1s2 1 4 1 2-1 4-1 2 1 4 1 2-1 4-1"/></symbol>
+  <symbol id="i-camera" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-2.5h6L17 8h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13" r="3.5"/></symbol>
+  <symbol id="i-chip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></symbol>
+  <symbol id="i-car" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 16V11l2-5h10l2 5v5M5 16h14M5 16v3M19 16v3"/><circle cx="8" cy="13" r=".8"/><circle cx="16" cy="13" r=".8"/></symbol>
+  <symbol id="i-boat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15h18l-2.5 4h-13zM12 4v11M12 5l6 8h-6"/></symbol>
+  <symbol id="i-cloud" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18a4 4 0 1 1 .8-7.9A5 5 0 0 1 17.5 9 4.5 4.5 0 0 1 17 18z"/><path d="M12 11v5M10 14l2 2 2-2"/></symbol>
+  <symbol id="i-leaf" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 18h18M5 18 12 6M19 18l-4-7"/></symbol>
+  <symbol id="i-rec" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6" fill="currentColor"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor"/></symbol>
+</svg>
+
+<header class="top">
+  <div class="logo" aria-hidden="true"><svg width="20" height="20" style="color:#fff"><use href="#i-bridge"/></svg></div>
+  <span class="brand">Watch The Hutch</span>
+  <span class="divider" aria-hidden="true"></span>
+  <span class="device" id="device">…</span>
+  <div class="right">
+    <span class="chip" id="recpill" hidden><span class="dot"></span>Recording <span class="sub" id="rectime"></span></span>
+    <a class="chip" id="lastclip" href="#clipsec" hidden><svg width="14" height="14" aria-hidden="true"><use href="#i-camera"/></svg>Last clip <span class="sub" id="lastclipsub"></span></a>
+    <span class="chip" id="status" role="status"><span class="dot"></span><span id="statustext">…</span></span>
+  </div>
 </header>
-<main>
-  <section class="view" id="view">
-    <h2>Live view</h2>
-    <div class="frame">
-      <img id="stream" src="stream.mjpg?overlay=1" alt="Live camera view">
-      <canvas id="roicanvas"></canvas>
-    </div>
-    <div class="row" id="viewrow">
-      <label><input type="checkbox" id="overlay" checked> Show boxes</label>
-      <button id="editbtn">Adjust boxes</button>
-      <span id="camline"></span>
-    </div>
-    <div class="row" id="editrow" hidden>
-      <span>Drag a box to move it, drag a corner to resize.</span>
-      <button class="go" id="savebtn">Save boxes</button>
-      <button id="cancelbtn">Cancel</button>
-      <span id="editmsg"></span>
-    </div>
-  </section>
-  <div class="stack">
-    <section>
-      <h2>Recording</h2>
-      <div class="row" style="margin-top:0">
-        <select id="label" aria-label="Label"></select>
-        <input type="text" id="note" placeholder="Note (optional)" maxlength="500">
-      </div>
-      <div class="row">
-        <button class="primary" id="recbtn" disabled>Start recording</button>
-        <span id="recline"></span>
-      </div>
-      <div class="note" id="recnote"></div>
-    </section>
-    <section>
-      <h2>Bridge</h2>
-      <div class="big" id="bridge">unknown</div>
+
+<main class="layout">
+  <aside class="side">
+    <section class="card hero" aria-labelledby="bridge">
+      <div class="ring" id="ring" aria-hidden="true"><svg><use href="#i-bridge"/></svg></div>
+      <h1 id="bridge">unknown</h1>
       <div class="phase" id="phase"></div>
       <div class="note" id="bridgenote">No detector running yet.</div>
       <div class="note" id="waitnote"></div>
-      <div class="note" id="stagenote"></div>
-      <div class="lanes">
-        <div class="lane"><div class="k">Northbound</div><div class="v lv-unknown" id="nb">unknown</div><div class="note" id="nbnote" style="margin-top:2px"></div></div>
-        <div class="lane"><div class="k">Southbound</div><div class="v lv-unknown" id="sb">unknown</div><div class="note" id="sbnote" style="margin-top:2px"></div></div>
+      <div class="steps" aria-label="Detector stage">
+        <div class="step" data-stage="traffic"><span class="n">1</span>Traffic</div>
+        <div class="step" data-stage="watch"><span class="n">2</span>Bridge</div>
+        <div class="step" data-stage="track"><span class="n">3</span>Opening</div>
       </div>
-      <div class="note" id="leafnote"></div>
-      <h2 style="margin-top:14px">Boat</h2>
-      <div class="big" id="boat" style="font-size:20px">none</div>
-      <div class="note" id="boatnote"></div>
-      <div class="note" id="detnote"></div>
+      <div class="note" id="stagenote"></div>
     </section>
-    <section>
-      <h2>Telemetry</h2>
+
+    <section class="card">
+      <div class="card-head"><h2>Status</h2><span class="sub" id="statussub"></span></div>
+      <div class="tiles">
+        <div class="tile">
+          <div class="top-row"><span class="icon green"><svg><use href="#i-camera"/></svg></span><span class="badge" id="cambadge"><span class="dot"></span><span>…</span></span></div>
+          <div class="t">Camera</div><div class="s" id="camline">Starting…</div>
+        </div>
+        <div class="tile">
+          <div class="top-row"><span class="icon violet"><svg><use href="#i-chip"/></svg></span><span class="badge" id="detbadge"><span class="dot"></span><span>…</span></span></div>
+          <div class="t">Detectors</div><div class="s" id="detnote"></div>
+        </div>
+        <div class="tile">
+          <div class="top-row"><span class="icon"><svg><use href="#i-car"/></svg></span><span class="badge" id="nbbadge"><span class="dot"></span><span id="nb">unknown</span></span></div>
+          <div class="t">Northbound</div><div class="s" id="nbnote"></div>
+        </div>
+        <div class="tile">
+          <div class="top-row"><span class="icon"><svg><use href="#i-car"/></svg></span><span class="badge" id="sbbadge"><span class="dot"></span><span id="sb">unknown</span></span></div>
+          <div class="t">Southbound</div><div class="s" id="sbnote"></div>
+        </div>
+        <div class="tile">
+          <div class="top-row"><span class="icon teal"><svg><use href="#i-boat"/></svg></span><span class="badge" id="boatbadge"><span class="dot"></span><span id="boat">none</span></span></div>
+          <div class="t">Boat</div><div class="s" id="boatnote"></div>
+        </div>
+        <div class="tile">
+          <div class="top-row"><span class="icon amber"><svg><use href="#i-cloud"/></svg></span><span class="badge" id="pubbadge"><span class="dot"></span><span>…</span></span></div>
+          <div class="t">Publisher</div><div class="s" id="pubnote"></div>
+        </div>
+        <div class="tile wide">
+          <div class="top-row" style="margin-bottom:6px"><span class="icon amber"><svg><use href="#i-leaf"/></svg></span><span class="note" id="leafnote" style="text-align:right"></span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Recording</h2><span class="sub" id="recline"></span></div>
+      <div class="rec-fields">
+        <select class="field" id="label" aria-label="Label"></select>
+        <input class="field" type="text" id="note" placeholder="Note (optional)" maxlength="500" aria-label="Note">
+      </div>
+      <button class="rec-btn" id="recbtn" disabled>
+        <span class="icon red" id="recicon"><svg><use href="#i-rec"/></svg></span>
+        <span class="t" id="rectitle">Start recording</span>
+        <span class="s" id="recsub">Saves a clip with the frames from just before</span>
+      </button>
+      <div class="note" id="recnote"></div>
+    </section>
+
+    <section class="card">
+      <div class="card-head"><h2>Telemetry</h2><span class="sub" id="telsub"></span></div>
       <dl id="tel"></dl>
       <div class="note" id="auth"></div>
     </section>
+  </aside>
+
+  <div class="content">
+    <div class="tabsbar">
+      <div class="tabs" id="tabs" role="tablist" aria-label="Camera view"></div>
+      <span class="tabhint" id="tabhint"></span>
+    </div>
+
+    <div class="feeds" id="feeds" role="tabpanel" aria-labelledby="tab-full">
+      <div class="feed" id="view">
+        <img id="stream" alt="Live camera view">
+        <canvas id="roicanvas"></canvas>
+        <div class="waiting" id="waiting">Starting the camera…</div>
+        <div class="ov tl"><span class="glass" id="feedlabel">Live camera</span></div>
+        <div class="ov tr" id="feedright">
+          <div class="seg" id="overlayseg" role="group" aria-label="Boxes on the live view">
+            <button aria-pressed="true" data-overlay="1">Boxes</button>
+            <button aria-pressed="false" data-overlay="0">Clean</button>
+          </div>
+          <span class="glass" id="feedpill"><span class="dot"></span><span>…</span></span>
+        </div>
+        <div class="ov bl caption" id="feedcaption"></div>
+      </div>
+      <div class="feed" id="ctxfeed" hidden>
+        <img id="ctx" alt="Where the box sits in the full frame">
+        <div class="ov tl"><span class="glass">Full frame</span></div>
+        <div class="ov bl caption" id="ctxcaption"></div>
+      </div>
+    </div>
+
+    <div class="toolbar" id="viewrow">
+      <button class="btn" id="editbtn">Adjust boxes</button>
+      <span id="camsize"></span>
+    </div>
+    <div class="toolbar" id="editrow" hidden>
+      <span>Drag a box to move it, drag a corner to resize.</span>
+      <button class="btn go" id="savebtn">Save boxes</button>
+      <button class="btn" id="cancelbtn">Cancel</button>
+      <span id="editmsg"></span>
+    </div>
+
+    <div class="sechead"><h2 id="detailtitle">Boxes</h2><span id="detailsub">What each detector box sees right now</span></div>
+    <div class="panel"><div class="readings" id="readings"><div class="empty">Waiting for the device…</div></div></div>
+
+    <section id="aissection" hidden>
+      <div class="sechead" style="margin-bottom:12px"><h2>Boats nearby</h2><span id="aisstatus"></span></div>
+      <div class="panel">
+        <div id="map"></div>
+        <div class="vessels" id="vessels"></div>
+        <div class="note" id="aisnote" style="margin-top:8px"></div>
+      </div>
+    </section>
+
+    <section id="clipsec">
+      <div class="sechead" style="margin-bottom:12px"><h2>Clips</h2><span id="clipcount"></span></div>
+      <div class="panel">
+        <div class="clips" id="clips"></div>
+        <div class="empty" id="clipsempty">No clips yet.</div>
+      </div>
+    </section>
   </div>
-  <section class="wide" id="aissection" hidden>
-    <h2>Boats nearby <span id="aisstatus" style="text-transform:none;letter-spacing:0"></span></h2>
-    <div id="map"></div>
-    <div class="vessels" id="vessels"></div>
-    <div class="note" id="aisnote"></div>
-  </section>
-  <section class="wide">
-    <h2>Clips <span id="clipcount" style="text-transform:none;letter-spacing:0"></span></h2>
-    <div class="clips" id="clips"></div>
-    <div class="note" id="clipsempty">No clips yet.</div>
-  </section>
 </main>
-<dialog id="player"><video id="video" controls playsinline></video><div class="row"><span id="playtitle"></span><button id="closeplayer" style="margin-left:auto">Close</button></div></dialog>
+<dialog id="player"><video id="video" controls playsinline></video><div class="toolbar"><span id="playtitle"></span><button class="btn" id="closeplayer" style="margin-left:auto">Close</button></div></dialog>
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const store = {
+  get: (k) => { try { return localStorage.getItem(k); } catch { return null; } },
+  set: (k, v) => { try { localStorage.setItem(k, v); } catch {} },
+};
 const fmt = {
   pct: (v) => v == null ? "–" : `${v.toFixed(0)}%`,
   temp: (c, unit) => c == null ? "–" : unit === "C" ? `${c.toFixed(1)} °C` : `${(c * 9 / 5 + 32).toFixed(1)} °F`,
@@ -157,6 +349,7 @@ const fmt = {
   dur: (s) => s == null ? "" : `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`,
   mb: (b) => b == null ? "" : `${(b / 1e6).toFixed(1)} MB`,
   when: (ts) => new Date(ts * 1000).toLocaleString([], { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }),
+  name: (n) => String(n).replaceAll("_", " "),
 };
 async function api(path, opts = {}) {
   const r = await fetch(path, { cache: "no-store", headers: { "Content-Type": "application/json" }, ...opts });
@@ -164,30 +357,116 @@ async function api(path, opts = {}) {
   if (!r.ok) throw new Error(body?.detail || r.status);
   return body;
 }
-
-// ---------------- live view
-let editing = false;
-function setStream() {
-  if (editing) return;
-  $("stream").src = `stream.mjpg?overlay=${$("overlay").checked ? 1 : 0}&t=${Date.now()}`;
+// Badge: a pill with a coloured dot. tone is ok | warn | bad | "" (grey).
+function badge(id, text, tone = "") {
+  const el = $(id);
+  el.className = `badge ${tone}`;
+  el.lastElementChild.textContent = text;
 }
-$("overlay").addEventListener("change", setStream);
+// Same order as ROI_COLOURS in app.py, so tabs match the boxes drawn on the stream.
+const COLORS = ["#21d19f", "#facc15", "#60a5fa", "#f472b6", "#a78bfa", "#fb923c", "#2dd4bf"];
+const roiColor = (name) => COLORS[Math.max(0, Object.keys(state?.rois || {}).indexOf(name)) % COLORS.length];
+
+// ---------------- tabs + live view
+// "" is the full view; any other value is an ROI name from the site config.
+let tab = store.get("wth.tab") || "", editing = false, overlay = store.get("wth.overlay") !== "0", tabKeys = "";
+function renderTabs() {
+  const names = Object.keys(state?.rois || {});
+  const keys = names.join("|");
+  if (keys === tabKeys) return;
+  tabKeys = keys;
+  if (tab && !names.includes(tab)) tab = "";
+  $("tabs").innerHTML = [["", "Full view", "#f5f5f7"], ...names.map((n) => [n, fmt.name(n), roiColor(n)])].map(([key, label, color]) =>
+    `<button class="tab" role="tab" id="tab-${esc(key || "full")}" data-roi="${esc(key)}" aria-selected="${key === tab}" tabindex="${key === tab ? 0 : -1}">` +
+    `<span class="dot" style="background:${color}"></span>${esc(label)}</button>`).join("");
+  setStreams();
+}
+function selectTab(key, focus = false) {
+  if (editing && key) setEditing(false);
+  tab = key; store.set("wth.tab", key);
+  for (const b of $("tabs").querySelectorAll(".tab")) {
+    const on = b.dataset.roi === key;
+    b.setAttribute("aria-selected", on); b.tabIndex = on ? 0 : -1;
+    if (on && focus) b.focus();
+    if (on) { $("feeds").setAttribute("aria-labelledby", b.id); b.scrollIntoView({ block: "nearest", inline: "nearest" }); }
+  }
+  setStreams(); renderDetail();
+}
+$("tabs").addEventListener("click", (e) => { const b = e.target.closest(".tab"); if (b) selectTab(b.dataset.roi); });
+$("tabs").addEventListener("keydown", (e) => {
+  const tabs = [...$("tabs").querySelectorAll(".tab")], i = tabs.findIndex((b) => b.dataset.roi === tab);
+  const j = { ArrowRight: i + 1, ArrowLeft: i - 1, Home: 0, End: tabs.length - 1 }[e.key];
+  if (j == null) return;
+  e.preventDefault();
+  selectTab(tabs[(j + tabs.length) % tabs.length].dataset.roi, true);
+});
+
+function setStreams() {
+  if (editing) return;
+  const t = Date.now(), r = state?.rois?.[tab];
+  if (document.hidden) { $("stream").removeAttribute("src"); $("ctx").removeAttribute("src"); return; }
+  $("feeds").classList.toggle("split", !!tab);
+  $("view").classList.toggle("zoom", !!tab);
+  $("ctxfeed").hidden = !tab;
+  $("overlayseg").hidden = !!tab;
+  $("viewrow").hidden = !!tab;
+  if (tab) {
+    $("stream").src = `stream.mjpg?roi=${encodeURIComponent(tab)}&t=${t}`;
+    const fw = $("ctx").naturalWidth || 16, fh = $("ctx").naturalHeight || 9;
+    if (r) $("view").style.setProperty("--zoom-aspect", String(clamp((r.w * fw) / (r.h * fh), 1, 2.4)));
+    $("ctx").src = `stream.mjpg?overlay=1&only=${encodeURIComponent(tab)}&t=${t}`;
+    $("feedlabel").innerHTML = `<span class="dot" style="background:${roiColor(tab)}"></span>${esc(fmt.name(tab))} · zoomed`;
+    $("feedcaption").textContent = "";
+    $("ctxcaption").textContent = fmt.name(tab);
+    $("ctxcaption").style.color = roiColor(tab);
+    $("tabhint").textContent = r ? `Cut from the full-resolution frame · ${Math.round(r.w * 100)}% × ${Math.round(r.h * 100)}% of the view` : "";
+  } else {
+    $("ctx").removeAttribute("src");
+    $("stream").src = `stream.mjpg?overlay=${overlay ? 1 : 0}&t=${t}`;
+    $("feedlabel").textContent = "Live camera";
+    $("feedcaption").textContent = "";
+    $("tabhint").textContent = "Pick a box to zoom in on what that detector sees";
+  }
+  for (const b of $("overlayseg").querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset.overlay === (overlay ? "1" : "0")));
+}
+$("ctx").addEventListener("load", () => {
+  const r = state?.rois?.[tab], img = $("ctx");
+  if (r && img.naturalWidth) $("view").style.setProperty("--zoom-aspect", String(clamp((r.w * img.naturalWidth) / (r.h * img.naturalHeight), 1, 2.4)));
+});
+$("stream").addEventListener("load", () => { $("waiting").hidden = true; });
+$("stream").addEventListener("error", () => { $("waiting").hidden = false; });
+$("overlayseg").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  overlay = b.dataset.overlay === "1"; store.set("wth.overlay", overlay ? "1" : "0"); setStreams();
+});
+document.addEventListener("visibilitychange", setStreams); // don't make the Pi encode for a hidden tab
 
 // ---------------- state + telemetry
 let state = null;
+const ago = (ts) => ts ? `${fmt.dur(Date.now() / 1000 - ts)} ago` : "";
+const LEVEL_TONE = { light: "ok", moderate: "warn", heavy: "warn orange", standstill: "bad" };
 async function tick() {
   try {
     const s = state = await api("api/state");
-    $("status").textContent = s.status; $("status").className = `pill ${s.status}`;
+    const stTone = { ok: "ok", degraded: "warn", starting: "warn", offline: "bad" }[s.status] || "";
+    $("status").className = `chip ${stTone}`;
+    $("statustext").textContent = s.status === "ok" ? "Live" : s.status;
     $("device").textContent = `${s.device_id} · v${s.version}`;
+    renderTabs();
+
     const cam = s.camera || {};
-    $("camline").innerHTML = cam.ok
-      ? `<span class="ok">Camera ok</span> · ${esc(cam.fps)} fps · ${esc(cam.sensor)}`
-      : `<span class="bad">Camera down</span> · ${esc(cam.error)}`;
+    badge("cambadge", cam.ok ? "Live" : "Down", cam.ok ? "ok" : "bad");
+    $("camline").textContent = cam.ok ? `${cam.fps} fps · ${cam.sensor || "camera"}` : cam.error || "No frames";
+    $("feedpill").className = `glass ${cam.ok ? "ok" : "bad"}`;
+    $("feedpill").lastElementChild.textContent = cam.ok ? `${cam.fps} fps` : "Camera down";
+    $("camsize").textContent = cam.ok ? `${cam.sensor || ""}` : "";
+    if (!cam.ok) $("waiting").hidden = false;
+
     const b = s.bridge || {}, far = s.far_leaf || {}, op = s.opening, tr = s.traffic || {};
     const det = s.detector;
-    const ago = (ts) => ts ? `${fmt.dur(Date.now() / 1000 - ts)} ago` : "";
-    $("bridge").textContent = (op ? op.position : b.position) || "unknown";
+    const pos = (op ? op.position : b.position) || "unknown";
+    $("bridge").textContent = pos === "unknown" ? "Bridge unknown" : `Bridge ${pos}`;
+    $("ring").className = `ring ${pos === "closed" ? "ok" : pos === "open" ? "bad" : pos === "unknown" ? "" : "warn"}`;
     $("phase").textContent = op ? op.phase.replace("_", " ") : "";
     $("bridgenote").textContent = !det ? "Detectors are off." : op
       ? `${Math.round((op.confidence || 0) * 100)}% · since ${ago(op.since)}${op.boat_direction ? ` · boat ${op.boat_direction.toUpperCase()} (${op.boat_source})` : ""}${op.openings_seen ? ` · ${op.openings_seen} openings learned` : ""}`
@@ -196,26 +475,40 @@ async function tick() {
       : b.angle_deg != null ? `${b.angle_deg}°` : "Can't see the bridge edge.";
     const w = op?.wait;
     $("waitnote").textContent = w ? `Wait ${w.remainingMinutes} min more (${w.estimatedTotalMinutes} min total, ${Math.round(w.confidence * 100)}%)` : "";
-    for (const [id, name] of [["nb", "northbound"], ["sb", "southbound"]]) {
-      const l = tr[name] || {};
-      $(id).textContent = l.level || "unknown"; $(id).className = `v lv-${l.level || "unknown"}`;
-      $(id + "note").textContent = l.flow == null ? (det ? "no box" : "") : `flow ${l.flow.toFixed(3)} · fill ${l.fill.toFixed(2)}`;
-    }
+
     const sg = s.stage;
-    const stageLabel = { traffic: "1 · watching traffic", watch: "2 · watching the bridge", track: "3 · tracking the opening" };
-    $("stagenote").textContent = !sg ? "" : `Stage ${stageLabel[sg.stage] || sg.stage} · since ${ago(sg.since)}${sg.reason ? ` (${sg.reason.replaceAll("_", " ")})` : ""}`
+    for (const el of document.querySelectorAll(".step")) {
+      const on = sg?.stage === el.dataset.stage;
+      el.classList.toggle("on", on);
+      if (on) el.setAttribute("aria-current", "step"); else el.removeAttribute("aria-current");
+    }
+    $("stagenote").textContent = !sg ? (det ? "" : "Stages start with the detectors.") : `Since ${ago(sg.since)}${sg.reason ? ` · ${sg.reason.replaceAll("_", " ")}` : ""}`
       + (sg.stopped_for_s != null ? ` · stopped ${Math.round(sg.stopped_for_s)} s` : "")
       + (sg.quiet_left_s != null ? ` · back to traffic in ${Math.round(sg.quiet_left_s)} s${sg.boat_seen ? " (boat seen)" : ""}` : "");
+
+    for (const [id, name] of [["nb", "northbound"], ["sb", "southbound"]]) {
+      const l = tr[name] || {};
+      badge(id + "badge", l.level || "unknown", LEVEL_TONE[l.level] || "");
+      $(id + "note").textContent = l.flow == null ? (det ? "No box" : "Detectors off") : `flow ${l.flow.toFixed(3)} · fill ${l.fill.toFixed(2)}`;
+    }
     const leaf = (x, n) => x.watching === false ? `${n} not watched` : x.angle_deg == null ? `${n} –` : `${n} ${x.angle_deg}° ${x.position}`;
-    $("leafnote").textContent = det ? `${leaf(b, "near leaf")} · ${leaf(far, "far leaf")}${s.deck ? ` · deck ${s.deck.clear == null ? "–" : s.deck.clear ? "clear" : "busy"}` : ""}` : "";
-    updateAis(s);
+    $("leafnote").textContent = det ? `${leaf(b, "Near leaf")} · ${leaf(far, "far leaf")}${s.deck ? ` · deck ${s.deck.clear == null ? "–" : s.deck.clear ? "clear" : "busy"}` : ""}` : "Leaves and deck show here once the detectors run.";
+
     const boat = s.boat || {};
-    $("boat").textContent = boat.present ? `crossing${boat.direction ? " · " + boat.direction.toUpperCase() : ""}` : "none";
-    $("boat").className = `big ${boat.present ? "warn" : ""}`;
-    $("boatnote").textContent = boat.present ? `${Math.round((boat.confidence || 0) * 100)}% · started ${ago(boat.since)}` : "";
-    $("detnote").textContent = !det ? "" : det.error ? `Detector error: ${det.error}`
-      : `Detectors ${det.ms_per_frame} ms/frame${det.yolo ? ` · YOLO ${det.yolo_ms ?? "–"} ms` : " · motion only" + (det.yolo_error ? ` (${det.yolo_error})` : "")}`;
+    badge("boatbadge", boat.present ? `crossing${boat.direction ? " " + boat.direction.toUpperCase() : ""}` : "none", boat.present ? "warn" : "");
+    $("boatnote").textContent = boat.present ? `${Math.round((boat.confidence || 0) * 100)}% · started ${ago(boat.since)}` : det ? "River is clear" : "Detectors off";
+
+    badge("detbadge", !det ? "Off" : det.error ? "Error" : "Running", !det ? "" : det.error ? "bad" : "ok");
+    $("detnote").textContent = !det ? "Not running" : det.error ? det.error
+      : `${det.ms_per_frame} ms/frame${det.yolo ? ` · YOLO ${det.yolo_ms ?? "–"} ms` : " · motion only" + (det.yolo_error ? ` (${det.yolo_error})` : "")}`;
+
+    const p = s.publisher;
+    badge("pubbadge", !p ? "None" : p.ok === false ? "Failing" : p.held_by_admin ? "Held" : p.ok ? "Ok" : "Waiting", !p ? "" : p.ok === false ? "bad" : p.held_by_admin ? "warn" : p.ok ? "ok" : "");
+    $("pubnote").textContent = pubText(p);
+    $("statussub").textContent = `${Object.keys(s.rois || {}).length} boxes · ${cam.ok ? "camera live" : "camera down"}`;
+
     const t = s.telemetry || {}, thr = t.throttled || {};
+    $("telsub").textContent = t.uptime_s != null ? `up ${fmt.up(t.uptime_s)}` : "";
     const rows = [
       ["CPU temp", fmt.temp(t.cpu_temp_c, s.temperature_unit), t.cpu_temp_c > 75 ? "warn" : ""],
       ["CPU", fmt.pct(t.cpu_percent)],
@@ -226,15 +519,15 @@ async function tick() {
       ["Input voltage", fmt.volt(t.input_voltage_v), thr.under_voltage_now ? "bad" : ""],
       ["Undervoltage", thr.raw == null ? "–" : thr.under_voltage_now ? "now" : thr.under_voltage_occurred ? "since boot" : "no", thr.under_voltage_now ? "bad" : thr.under_voltage_occurred ? "warn" : ""],
       ["Throttled", thr.raw == null ? "–" : thr.throttled_now ? "now" : thr.throttled_occurred ? "since boot" : "no", thr.throttled_now ? "bad" : ""],
-      ["Uptime", fmt.up(t.uptime_s)],
       ["Model", t.model || "–"],
       ["IP", (t.ip || []).join(", ") || "–"],
-      ["Publisher", pubText(s.publisher), s.publisher?.ok === false ? "bad" : s.publisher?.held_by_admin ? "warn" : ""],
     ];
     $("tel").innerHTML = rows.map(([k, v, c]) => `<dt>${k}</dt><dd class="${c || ""}">${esc(v)}</dd>`).join("");
     $("auth").textContent = s.auth_enabled ? "" : "No WTH_WEB_PASSWORD set: this panel is open to anyone on the network.";
+    updateAis(s);
+    renderDetail();
   } catch (e) {
-    $("status").textContent = "unreachable"; $("status").className = "pill offline";
+    $("status").className = "chip bad"; $("statustext").textContent = "Unreachable";
   }
 }
 
@@ -242,12 +535,64 @@ function pubText(p) {
   if (!p) return "–";
   let t = p.driver;
   if (p.driver === "firestore") {
-    t += p.ok === false ? ` · failing: ${p.error || "?"}` : p.ok ? " · ok" : " · waiting";
+    t += p.ok === false ? ` · ${p.error || "?"}` : "";
     if (p.held_by_admin) t += " · admin override";
     if (p.writes_today != null) t += ` · ${p.writes_today} writes today`;
   }
   return t;
 }
+
+// ---------------- what a box sees
+// Readings come from the detector state; ROIs a detector doesn't report on just show where they sit.
+function roiReadings(name, s) {
+  const tr = s.traffic || {}, det = s.detector;
+  const lv = (l) => [l.level || "unknown", `lv-${l.level || "unknown"}`];
+  if (tr[name] || name === "northbound" || name === "southbound") {
+    const l = tr[name] || {};
+    return [["Traffic", ...lv(l), l.flow == null ? (det ? "no reading" : "detectors off") : `flow ${l.flow.toFixed(3)} · fill ${l.fill.toFixed(2)}`]];
+  }
+  const leafRow = (x, k) => [k, x.watching === false ? "not watched" : x.position || "unknown", x.position === "closed" ? "ok" : x.position && x.position !== "unknown" ? "warn" : "lv-unknown",
+    x.angle_deg == null ? "can't see the edge" : `${x.angle_deg}°${x.confidence != null ? ` · ${Math.round(x.confidence * 100)}%` : ""}`];
+  if (name === "bridge") return [leafRow(s.bridge || {}, "Near leaf")];
+  if (name === "far_leaf") return [leafRow(s.far_leaf || {}, "Far leaf")];
+  if (name === "deck") {
+    const d = s.deck || {};
+    return [["Deck", d.clear == null ? "unknown" : d.clear ? "clear" : "busy", d.clear == null ? "lv-unknown" : d.clear ? "ok" : "warn", det ? "cars between the gates" : "detectors off"]];
+  }
+  if (name.startsWith("boat")) {
+    const bt = s.boat || {};
+    return [["Boat", bt.present ? `crossing${bt.direction ? " " + bt.direction.toUpperCase() : ""}` : "none", bt.present ? "warn" : "lv-unknown",
+      bt.present ? `${Math.round((bt.confidence || 0) * 100)}% · ${ago(bt.since)}` : det ? "river is clear" : "detectors off"]];
+  }
+  return [];
+}
+function boxRow(r) {
+  return ["Box", `${Math.round(r.w * 100)} × ${Math.round(r.h * 100)}%`, "", `at ${Math.round(r.x * 100)}%, ${Math.round(r.y * 100)}% of the frame`];
+}
+function readingHtml([k, v, cls, sub], dot, tag = "div", attrs = "") {
+  return `<${tag} class="reading" ${attrs}><span class="k">${dot ? `<span class="dot" style="background:${dot}"></span>` : ""}${esc(k)}</span>` +
+    `<span class="v ${cls || ""}">${esc(v)}</span><span class="s">${esc(sub || "")}</span></${tag}>`;
+}
+function renderDetail() {
+  const s = state; if (!s) return;
+  const rois = s.rois || {};
+  if (!tab) {
+    $("detailtitle").textContent = "Boxes";
+    $("detailsub").textContent = "What each detector box sees right now. Pick one to zoom in.";
+    const html = Object.keys(rois).map((n) => {
+      const [first] = roiReadings(n, s);
+      const row = first ? [fmt.name(n), first[1], first[2], first[3]] : [fmt.name(n), ...boxRow(rois[n]).slice(1)];
+      return readingHtml(row, roiColor(n), "button", `data-roi="${esc(n)}" aria-label="Zoom in on ${esc(fmt.name(n))}"`);
+    }).join("");
+    $("readings").innerHTML = html || `<div class="empty">This site has no boxes set.</div>`;
+    return;
+  }
+  const r = rois[tab]; if (!r) return;
+  $("detailtitle").textContent = fmt.name(tab);
+  $("detailsub").textContent = "What this box sees right now";
+  $("readings").innerHTML = [...roiReadings(tab, s), boxRow(r)].map((row) => readingHtml(row)).join("");
+}
+$("readings").addEventListener("click", (e) => { const b = e.target.closest("button.reading"); if (b) selectTab(b.dataset.roi); });
 
 // ---------------- recording
 let rec = null, lastRecId = null;
@@ -259,13 +604,16 @@ async function recTick() {
   }
   const on = !!rec?.recording;
   $("recbtn").disabled = !rec?.available;
-  $("recbtn").textContent = on ? "Stop recording" : "Start recording";
-  $("recbtn").className = on ? "go" : "primary";
+  $("recbtn").classList.toggle("on", on);
+  $("rectitle").textContent = on ? "Stop recording" : "Start recording";
+  $("recicon").innerHTML = `<svg><use href="#i-${on ? "stop" : "rec"}"/></svg>`;
+  $("recsub").textContent = on
+    ? `${fmt.dur(rec.elapsed_s)}${rec.label ? " · " + rec.label : ""}${rec.trigger && rec.trigger !== "manual" ? " · started by a detector" : ""}`
+    : rec?.available ? `Starts ${rec.prebuffer_s} s back · stops itself after ${Math.round(rec.max_duration_s / 60)} min` : "Unavailable with this camera";
   $("recpill").hidden = !on;
-  $("recline").textContent = on ? `Recording ${fmt.dur(rec.elapsed_s)}${rec.label ? " · " + rec.label : ""}${rec.trigger && rec.trigger !== "manual" ? " (auto)" : ""}` : "";
-  $("recnote").textContent = !rec ? "" : !rec.available
-    ? "Recording is unavailable with this camera."
-    : `Each clip starts ${rec.prebuffer_s} s before you press start and stops itself after ${Math.round(rec.max_duration_s / 60)} min.`;
+  $("rectime").textContent = on ? fmt.dur(rec.elapsed_s) : "";
+  $("recline").textContent = on ? "● Recording" : "";
+  $("recline").className = on ? "sub bad" : "sub";
   if ((rec?.clip_id || null) !== lastRecId) { lastRecId = rec?.clip_id || null; loadClips(); }
 }
 $("recbtn").addEventListener("click", async () => {
@@ -277,7 +625,7 @@ $("recbtn").addEventListener("click", async () => {
   } catch (e) { alertLine(e.message); }
   await recTick();
 });
-function alertLine(msg) { $("recnote").textContent = msg; $("recnote").className = "note bad"; setTimeout(() => $("recnote").className = "note", 4000); }
+function alertLine(msg) { $("recnote").textContent = msg; $("recnote").className = "note bad"; setTimeout(() => { $("recnote").textContent = ""; $("recnote").className = "note"; }, 4000); }
 
 // ---------------- clips
 async function loadClips() {
@@ -286,7 +634,10 @@ async function loadClips() {
   const clips = data.clips || [];
   $("clipsempty").hidden = clips.length > 0;
   const kept = clips.filter((c) => c.keep).length;
-  $("clipcount").textContent = clips.length ? `· ${clips.length} (${kept} kept)` : "";
+  $("clipcount").textContent = clips.length ? `${clips.length} saved · ${kept} kept` : "";
+  const last = clips.find((c) => !c.recording);
+  $("lastclip").hidden = !last;
+  if (last) $("lastclipsub").textContent = `${fmt.dur(last.duration_s)} · ${fmt.when(last.started_at)}`;
   $("clips").innerHTML = clips.map((c) => `
     <div class="clip ${c.keep ? "kept" : ""}" data-id="${esc(c.id)}">
       <img src="clips/${encodeURIComponent(c.id)}.jpg" alt="" loading="lazy" data-act="play">
@@ -296,10 +647,10 @@ async function loadClips() {
         ${c.note ? `<span class="s">${esc(c.note)}</span>` : ""}
       </div>
       <div class="acts">
-        <button data-act="play" ${c.recording ? "disabled" : ""}>Play</button>
+        <button class="btn" data-act="play" ${c.recording ? "disabled" : ""}>Play</button>
         <a class="btn" href="clips/${encodeURIComponent(c.id)}.mp4?download=1">Download</a>
-        <button data-act="keep">${c.keep ? "★ Kept" : "☆ Keep"}</button>
-        <button data-act="delete" ${c.recording ? "disabled" : ""}>Delete</button>
+        <button class="btn" data-act="keep">${c.keep ? "★ Kept" : "☆ Keep"}</button>
+        <button class="btn" data-act="delete" ${c.recording ? "disabled" : ""}>Delete</button>
       </div>
     </div>`).join("");
 }
@@ -318,7 +669,7 @@ $("clips").addEventListener("click", async (e) => {
     loadClips();
   } else if (act === "delete") {
     const btn = e.target.closest("button");
-    if (btn.dataset.confirm !== "1") { btn.dataset.confirm = "1"; btn.textContent = "Confirm delete"; btn.classList.add("primary"); return; }
+    if (btn.dataset.confirm !== "1") { btn.dataset.confirm = "1"; btn.textContent = "Confirm delete"; btn.classList.add("danger"); return; }
     await api(`api/clips/${encodeURIComponent(id)}`, { method: "DELETE" });
     loadClips();
   }
@@ -334,20 +685,20 @@ function updateAis(s) {
   $("aissection").hidden = !on;
   if (!on) return;
   const vessels = ais?.vessels || [];
-  $("aisstatus").textContent = !ais ? "· starting" : ais.ok ? `· live, ${vessels.length} within ${(ais.bridge.radius_m / 1609).toFixed(1)} mi` : ais.error ? `· ${ais.error}` : "· connecting";
+  $("aisstatus").textContent = !ais ? "Starting" : ais.ok ? `Live · ${vessels.length} within ${(ais.bridge.radius_m / 1609).toFixed(1)} mi` : ais.error ? ais.error : "Connecting";
   $("aisstatus").className = ais?.ok ? "ok" : ais?.error ? "bad" : "";
   if (typeof L === "undefined") { $("aisnote").textContent = "Map tiles need internet access from this browser."; }
   else if (!map && site.bridge_lat) {
     map = L.map("map", { zoomControl: true }).setView([site.bridge_lat, site.bridge_lon], 14);
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "&copy; OpenStreetMap" }).addTo(map);
     bridgeMarker = L.circleMarker([site.bridge_lat, site.bridge_lon], { radius: 8, color: "#c87832", fillColor: "#c87832", fillOpacity: .9 }).addTo(map).bindTooltip("Bridge");
-    L.circle([site.bridge_lat, site.bridge_lon], { radius: ais?.bridge?.radius_m || 1600, color: "#60a5fa", weight: 1, fill: false, dashArray: "4 4" }).addTo(map);
+    L.circle([site.bridge_lat, site.bridge_lon], { radius: ais?.bridge?.radius_m || 1600, color: "#5e9eff", weight: 1, fill: false, dashArray: "4 4" }).addTo(map);
   }
   if (map) {
     const seen = new Set();
     for (const v of vessels) {
       seen.add(v.mmsi);
-      const colour = v.approaching ? "#ef4444" : "#21d19f";
+      const colour = v.approaching ? "#ff453a" : "#34c759";
       const label = `${v.name || "MMSI " + v.mmsi} · ${v.sog_knots ?? "–"} kn · ${v.side}${v.approaching ? ` · ETA ${Math.round(v.eta_s / 60)} min` : ""}`;
       if (!markers[v.mmsi]) markers[v.mmsi] = L.marker([v.lat, v.lon], { icon: boatIcon(v.cog_deg, colour) }).addTo(map).bindTooltip(label);
       else markers[v.mmsi].setLatLng([v.lat, v.lon]).setIcon(boatIcon(v.cog_deg, colour)).setTooltipContent(label);
@@ -361,29 +712,35 @@ function updateAis(s) {
 function boatIcon(cog, colour) {
   const rot = cog == null ? 0 : cog;
   return L.divIcon({ className: "", iconSize: [22, 22], iconAnchor: [11, 11],
-    html: `<svg width="22" height="22" viewBox="-11 -11 22 22" style="transform:rotate(${rot}deg)"><path d="M0,-10 L6,8 L0,5 L-6,8 Z" fill="${colour}" stroke="#0a1428" stroke-width="1.5"/></svg>` });
+    html: `<svg width="22" height="22" viewBox="-11 -11 22 22" style="transform:rotate(${rot}deg)"><path d="M0,-10 L6,8 L0,5 L-6,8 Z" fill="${colour}" stroke="#000" stroke-width="1.5"/></svg>` });
 }
 
 // ---------------- ROI editor
-const COLORS = ["#21d19f", "#facc15", "#60a5fa", "#f472b6", "#a78bfa", "#fb923c", "#2dd4bf"];
 let rois = {}, drag = null, active = null;
 const canvas = $("roicanvas"), ctx = canvas.getContext("2d");
+// The image is letterboxed inside the feed (object-fit: contain); boxes live in the image's rectangle.
+function imgRect() {
+  const c = canvas.getBoundingClientRect(), img = $("stream");
+  const iw = img.naturalWidth || 16, ih = img.naturalHeight || 9;
+  const s = Math.min(c.width / iw, c.height / ih), w = iw * s, h = ih * s;
+  return { left: c.left + (c.width - w) / 2, top: c.top + (c.height - h) / 2, width: w, height: h, ox: (c.width - w) / 2, oy: (c.height - h) / 2 };
+}
 function draw() {
-  const r = canvas.getBoundingClientRect();
-  canvas.width = r.width * devicePixelRatio; canvas.height = r.height * devicePixelRatio;
+  const c = canvas.getBoundingClientRect(), r = imgRect();
+  canvas.width = c.width * devicePixelRatio; canvas.height = c.height * devicePixelRatio;
   ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
-  ctx.clearRect(0, 0, r.width, r.height);
+  ctx.clearRect(0, 0, c.width, c.height);
   Object.entries(rois).forEach(([name, b], i) => {
-    const x = b.x * r.width, y = b.y * r.height, w = b.w * r.width, h = b.h * r.height;
-    ctx.strokeStyle = COLORS[i % COLORS.length]; ctx.lineWidth = name === active ? 3 : 2;
-    ctx.fillStyle = COLORS[i % COLORS.length] + "22";
+    const x = r.ox + b.x * r.width, y = r.oy + b.y * r.height, w = b.w * r.width, h = b.h * r.height, col = COLORS[i % COLORS.length];
+    ctx.strokeStyle = col; ctx.lineWidth = name === active ? 3 : 2;
+    ctx.fillStyle = col + "22";
     ctx.fillRect(x, y, w, h); ctx.strokeRect(x, y, w, h);
-    ctx.fillStyle = COLORS[i % COLORS.length]; ctx.font = "600 13px system-ui"; ctx.fillText(name, x + 6, y + 16);
+    ctx.fillStyle = col; ctx.font = "600 13px -apple-system, Inter, system-ui"; ctx.fillText(name, x + 6, y + 16);
     for (const [cx, cy] of [[x, y], [x + w, y], [x, y + h], [x + w, y + h]]) ctx.fillRect(cx - 5, cy - 5, 10, 10);
   });
 }
 function hit(px, py) {
-  const r = canvas.getBoundingClientRect();
+  const r = imgRect();
   const names = Object.keys(rois).reverse();
   for (const name of names) {
     const b = rois[name], x = b.x * r.width, y = b.y * r.height, w = b.w * r.width, h = b.h * r.height;
@@ -396,16 +753,15 @@ function hit(px, py) {
   }
   return null;
 }
-const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 canvas.addEventListener("pointerdown", (e) => {
-  const r = canvas.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top;
+  const r = imgRect(), px = e.clientX - r.left, py = e.clientY - r.top;
   const h = hit(px, py); if (!h) return;
   active = h.name; drag = { ...h, sx: px / r.width, sy: py / r.height, orig: { ...rois[h.name] } };
   canvas.setPointerCapture(e.pointerId); draw();
 });
 canvas.addEventListener("pointermove", (e) => {
   if (!drag) return;
-  const r = canvas.getBoundingClientRect();
+  const r = imgRect();
   const fx = clamp((e.clientX - r.left) / r.width, 0, 1), fy = clamp((e.clientY - r.top) / r.height, 0, 1);
   const o = drag.orig, b = rois[drag.name], min = 0.02;
   if (drag.mode === "move") {
@@ -420,14 +776,17 @@ canvas.addEventListener("pointermove", (e) => {
 });
 canvas.addEventListener("pointerup", () => { drag = null; });
 function setEditing(on) {
+  if (on && tab) selectTab("");
   editing = on;
   $("view").classList.toggle("editing", on);
   $("editrow").hidden = !on; $("viewrow").hidden = on; $("editmsg").textContent = "";
+  $("overlayseg").hidden = on;
+  $("feedlabel").textContent = on ? "Adjusting boxes" : "Live camera";
   if (on) {
     rois = JSON.parse(JSON.stringify(state?.rois || {}));
     $("stream").src = `snapshot.jpg?overlay=0&t=${Date.now()}`;
     $("stream").onload = () => { draw(); $("stream").onload = null; };
-  } else setStream();
+  } else setStreams();
 }
 $("editbtn").addEventListener("click", () => setEditing(true));
 $("cancelbtn").addEventListener("click", () => setEditing(false));
@@ -436,10 +795,12 @@ $("savebtn").addEventListener("click", async () => {
     const out = await api("api/rois", { method: "PUT", body: JSON.stringify(rois) });
     if (state) state.rois = out.rois;
     setEditing(false);
+    renderDetail();
   } catch (e) { $("editmsg").textContent = e.message; $("editmsg").className = "bad"; }
 });
 addEventListener("resize", () => editing && draw());
 
+setStreams();
 tick(); recTick(); loadClips();
 setInterval(tick, 2000); setInterval(recTick, 1000); setInterval(loadClips, 15000);
 </script>
