@@ -38,6 +38,9 @@ class Device:
         self.store = ClipStore(config.paths.data_dir)
         self.camera.setup_recording(config.recording)
         self.recorder = Recorder(config, self.camera, self.store)
+        from .tune.session import Tuner
+
+        self.tuner = Tuner(config, self.recorder, self.store)
         self.detectors = None
         self.ais = None
         if config.ais.enabled:
@@ -146,6 +149,8 @@ class Device:
                 self._state["publisher"] = self.publisher.status()
                 rec = self.recorder.status()
                 self._state["recording"] = {k: rec[k] for k in ("available", "recording", "label", "elapsed_s", "trigger")}
+                tune = self.tuner.status()
+                self._state["tune"] = {k: tune.get(k) for k in ("active", "phase", "round", "chunk", "chunks")}
                 self._state["status"] = self._status(health.ok, self._state["telemetry"])
                 self._state["updated_at"] = time.time()
                 snapshot = copy.deepcopy(self._state)
@@ -196,6 +201,10 @@ class Device:
             Path(self.config.paths.data_dir).mkdir(parents=True, exist_ok=True)
         except OSError as exc:
             log.warning("cannot create data dir %s: %s", self.config.paths.data_dir, exc)
+        try:
+            self.tuner.recover()
+        except Exception:
+            log.exception("could not clean up an interrupted self-tuning session")
         self.camera.start()
         if self.ais is not None:
             self.ais.start()
@@ -211,6 +220,7 @@ class Device:
         self.stop_event.set()
         if self.detectors is not None:
             self.detectors.stop()  # first, so nothing starts a new clip during shutdown
+        self.tuner.close()
         try:
             self.recorder.close()
         except Exception:
@@ -235,7 +245,8 @@ def run(config) -> int:
 
             from .web.app import create_app
 
-            app = create_app(config, device.bus, device.get_state, recorder=device.recorder, store=device.store)
+            app = create_app(config, device.bus, device.get_state, recorder=device.recorder, store=device.store,
+                             tuner=device.tuner)
             server = device.server = uvicorn.Server(
                 uvicorn.Config(app, host=config.web.host, port=config.web.port, log_level="warning",
                                timeout_graceful_shutdown=2, access_log=False)
