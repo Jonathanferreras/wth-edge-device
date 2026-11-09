@@ -7,6 +7,10 @@ For each box (``northbound``, ``southbound`` and the ``deck``):
 * *fill*: the fraction of pixels that differ from a slowly learned background. Cars make
   it high whether they move or not, so a queue reads as "present".
 
+Where the fill mask is set, ``LaneWatcher`` also keeps the separate blobs as boxes (frame
+fractions) so the panel can draw the cars it sees. They are blobs of "not road", not a
+car classifier: two cars bumper to bumper make one box.
+
 ``LaneTracker`` averages both over a short window and names a level the way the web app
 does: ``light``, ``moderate`` or ``heavy`` from the fill while traffic moves, ``standstill``
 when the lane is filled but nothing moves, ``unknown`` with no frames. The deck only
@@ -24,6 +28,15 @@ import numpy as np
 LEVELS = ("light", "moderate", "heavy", "standstill", "unknown")
 
 
+Box = tuple[float, float, float, float]  # x1, y1, x2, y2 as fractions of the frame
+
+
+@dataclass
+class Vehicle:
+    box: Box
+    moving: bool
+
+
 @dataclass
 class LaneReading:
     flow: float   # 0-1, fraction of the box that changed since the last frame
@@ -37,6 +50,7 @@ class LaneWatcher:
         self.cfg = cfg
         self._prev: np.ndarray | None = None
         self._bg: np.ndarray | None = None
+        self.vehicles: list[Vehicle] = []
 
     def update(self, frame: np.ndarray, roi) -> LaneReading | None:
         import cv2
@@ -44,6 +58,7 @@ class LaneWatcher:
         h, w = frame.shape[:2]
         x1, y1, x2, y2 = roi.to_pixels(w, h)
         if x2 - x1 < 4 or y2 - y1 < 4:
+            self.vehicles = []
             return None
         crop = frame[y1:y2, x1:x2]
         gray = crop if crop.ndim == 2 else cv2.cvtColor(crop, cv2.COLOR_RGB2GRAY)
@@ -53,18 +68,46 @@ class LaneWatcher:
         gray = cv2.GaussianBlur(gray, (5, 5), 0).astype(np.float32)
         if self._prev is None or self._prev.shape != gray.shape:
             self._prev, self._bg = gray, gray.copy()
+            self.vehicles = []
             return None
         thr = float(self.cfg.diff_threshold)
-        flow = float(np.mean(np.abs(gray - self._prev) > thr))
-        fill = float(np.mean(np.abs(gray - self._bg) > thr))
+        moved = np.abs(gray - self._prev) > thr
+        present = np.abs(gray - self._bg) > thr
+        flow = float(np.mean(moved))
+        fill = float(np.mean(present))
         self._prev = gray
+        self.vehicles = self._blobs(present | moved, moved, (x1, y1, x2, y2), (w, h))
         # The background only learns where nothing is moving, so a queue doesn't fade in.
         a = self.cfg.background_rate
         self._bg += a * (gray - self._bg)
         return LaneReading(round(flow, 4), round(fill, 4))
 
+    def _blobs(self, mask: np.ndarray, moved: np.ndarray, px: tuple, size: tuple) -> list[Vehicle]:
+        """Connected blobs of the mask, as frame-fraction boxes, biggest first."""
+        import cv2
+
+        min_area = self.cfg.vehicle_min_area * mask.size
+        if not self.cfg.vehicle_boxes or mask.sum() < min_area:
+            return []
+        m = cv2.morphologyEx(mask.astype(np.uint8), cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
+        n, _, stats, _ = cv2.connectedComponentsWithStats(m, connectivity=8)
+        x1, y1, x2, y2 = px
+        W, H = size
+        sx, sy = (x2 - x1) / m.shape[1], (y2 - y1) / m.shape[0]
+        out = []
+        for i in range(1, n):
+            bx, by, bw, bh, area = stats[i]
+            if area < min_area:
+                continue
+            box = ((x1 + bx * sx) / W, (y1 + by * sy) / H, (x1 + (bx + bw) * sx) / W, (y1 + (by + bh) * sy) / H)
+            still = float(np.mean(moved[by:by + bh, bx:bx + bw])) < self.cfg.flow_min * 4
+            out.append((area, Vehicle(tuple(round(v, 4) for v in box), not still)))
+        out.sort(key=lambda a: -a[0])
+        return [v for _, v in out[: self.cfg.vehicle_max]]
+
     def reset(self) -> None:
         self._prev = self._bg = None
+        self.vehicles = []
 
 
 class LaneTracker:

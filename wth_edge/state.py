@@ -34,6 +34,7 @@ def new_state(device_id: str, version: str) -> dict[str, Any]:
         # Per direction: level (light / moderate / heavy / standstill / unknown), confidence, flow, fill.
         "traffic": {},
         "deck": None,
+        "vehicles": [],
         # Where the detectors look: traffic -> watch -> track (detectors/stages.py).
         "stage": None,
         # The opening state machine: phase, since, confidence, wait, and the website fields.

@@ -233,6 +233,9 @@ class Pipeline:
             "far_leaf": self._leaf_state(self.far_leaf),
             "traffic": {name: tr.state() for name, tr in self.lanes.items()},
             "deck": self.deck.state() if self.deck else None,
+            # Blobs in the lane and deck boxes, for the panel to draw (not published).
+            "vehicles": [{"box": list(v.box), "moving": v.moving, "lane": name}
+                         for name, w in self.watchers.items() if name in self.rois for v in w.vehicles],
             "opening": self.machine.state() if self.machine else None,
             "boat": self.boats.state() if self.boats else {"present": False},
             "detector": {

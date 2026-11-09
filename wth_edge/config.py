@@ -236,6 +236,11 @@ class TrafficDetectorSection:
     background_rate: float = 0.002
     # Deck fill below this means the deck is clear.
     deck_clear_max: float = 0.03
+    # Boxes around the cars in each lane, for the panel. A blob smaller than this fraction
+    # of its lane box is ignored; at most vehicle_max per box.
+    vehicle_boxes: bool = True
+    vehicle_min_area: float = 0.01
+    vehicle_max: int = 12
 
 
 @dataclass

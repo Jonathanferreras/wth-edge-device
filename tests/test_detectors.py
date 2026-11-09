@@ -204,3 +204,24 @@ def test_eval_runs_on_a_store(tmp_path):
     summary = run_eval(cfg, tmp_path, site=None, out=out)
     assert summary["boat_clips"] == 1 and summary["boat_found"] == 0
     assert '"closed"' in out.read_text()
+
+
+def test_lane_watcher_boxes_cars():
+    from wth_edge.config import Roi, TrafficDetectorSection
+    from wth_edge.detectors.traffic import LaneWatcher
+
+    w = LaneWatcher(TrafficDetectorSection())
+    roi = Roi(0.5, 0.5, 0.25, 0.25)  # 80 x 45 px of a 320 x 180 frame
+    road = np.full((180, 320), 90, dtype=np.uint8)
+    assert w.update(road, roi) is None and w.vehicles == []
+    w.update(road, roi)
+    assert w.vehicles == []
+    car = road.copy()
+    car[100:110, 170:185] = 220  # one car, inside the lane box
+    car[120:128, 210:220] = 20   # another
+    w.update(car, roi)
+    assert len(w.vehicles) == 2 and all(v.moving for v in w.vehicles)
+    x1, y1, x2, y2 = w.vehicles[0].box
+    assert abs(x1 - 170 / 320) < 0.02 and abs(y1 - 100 / 180) < 0.02 and abs(x2 - 185 / 320) < 0.02 and abs(y2 - 110 / 180) < 0.02
+    w.update(car, roi)  # parked: still there, no longer moving
+    assert len(w.vehicles) == 2 and not any(v.moving for v in w.vehicles)
