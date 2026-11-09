@@ -349,6 +349,42 @@ class AutoRecordSection:
 
 
 @dataclass
+class TuneSection:
+    """Self-tuning: record a while, check what the detector said against what was really
+    there, fit the thresholds and report (see ``wth_edge/tune/``). Started from the panel."""
+
+    # Whether the panel offers it at all.
+    enabled: bool = True
+    # How long one round records, and the length of each recorded chunk.
+    duration_s: float = 3600.0
+    chunk_s: float = 300.0
+    # A reviewed moment every this many seconds, plus every time the detector's reading changes.
+    sample_s: float = 15.0
+    # Each moment is a pair of frames this far apart, so stopped and moving cars differ.
+    pair_gap_s: float = 2.0
+    # At most this many reviewed moments per round (keeps the API bill bounded).
+    max_reviews: int = 360
+    # "claude" labels the frames through the Anthropic API (ANTHROPIC_API_KEY); "none" skips it.
+    reviewer: str = "claude"
+    model: str = "claude-opus-5-5"
+    effort: str = "low"
+    # The offline reference pass: YOLO over the lanes and the river, this many times a second.
+    ref_fps: float = 2.0
+    ref_boat_fps: float = 0.5
+    ref_confidence: float = 0.3
+    # Keep tuning (another round) until the reviewed accuracy reaches this, for at most max_rounds.
+    target_accuracy: float = 0.9
+    max_rounds: int = 3
+    # New settings are kept only when the replay beats the old ones by at least this much.
+    min_gain: float = 0.02
+    auto_apply: bool = True
+    # Keep the recorded video after the analysis (normally deleted to save space).
+    keep_footage: bool = False
+    # Frames where the detector and the review disagreed, kept with the report.
+    keep_frames: int = 24
+
+
+@dataclass
 class UiSection:
     # How the screen and web panel show temperatures: "F" or "C".
     # Telemetry data itself always stays in Celsius (cpu_temp_c).
@@ -413,9 +449,13 @@ class Config:
     ais: AisSection = field(default_factory=AisSection)
     weather: WeatherSection = field(default_factory=WeatherSection)
     autorecord: AutoRecordSection = field(default_factory=AutoRecordSection)
+    tune: TuneSection = field(default_factory=TuneSection)
     site: SiteSection = field(default_factory=SiteSection)
     # Files that were merged, in order, for `wth-edge doctor` and logs.
     sources: list[str] = field(default_factory=list)
+    # Values the self-tuning loop replaced, as they were before ("section.key": value), so
+    # the panel can undo the tuning without a restart.
+    untuned: dict[str, Any] = field(default_factory=dict)
 
 
 class ConfigError(Exception):
@@ -523,6 +563,16 @@ def load(device_file: Path | str | None = None) -> Config:
         if value and not Path(value).is_absolute():
             setattr(obj, attr, str((base / value).resolve()))
 
+    # Thresholds the self-tuning loop settled on (wth_edge/tune). Delete the file to undo.
+    tuned = tuning_override_path(cfg)
+    if tuned.is_file():
+        try:
+            for dotted, (old, _new) in apply_tuning(cfg, _read_toml(tuned)).items():
+                cfg.untuned.setdefault(dotted, old)
+            cfg.sources.append(str(tuned))
+        except ConfigError as exc:
+            log.error("ignoring %s: %s", tuned, exc)
+
     # Last layer: ROIs adjusted in the web panel, saved where the service may write.
     overrides = roi_override_path(cfg)
     if overrides.is_file():
@@ -555,10 +605,67 @@ def save_roi_overrides(cfg: Config, rois: dict[str, Roi]) -> Path:
     return path
 
 
+TUNING_FILE = "tuning.toml"
+# What the self-tuning loop may change, as (section, key).
+TUNABLE = (
+    ("traffic_detector", "flow_min"),
+    ("traffic_detector", "present_min"),
+    ("traffic_detector", "moderate_min"),
+    ("traffic_detector", "heavy_min"),
+    ("traffic_detector", "deck_clear_max"),
+    ("bridge_detector", "closed_max_deg"),
+    ("bridge_detector", "open_min_deg"),
+)
+
+
+def tuning_override_path(cfg: Config) -> Path:
+    return Path(cfg.paths.data_dir) / TUNING_FILE
+
+
+def apply_tuning(cfg: Config, data: dict[str, Any]) -> dict[str, tuple[Any, Any]]:
+    """Set tuned values on the (live) config in place. Returns {"section.key": (old, new)}.
+    Only keys in TUNABLE are taken; the detectors read these attributes every frame."""
+    changed = {}
+    allowed = set(TUNABLE)
+    for section, values in data.items():
+        if not isinstance(values, dict):
+            continue
+        for key, value in values.items():
+            if (section, key) not in allowed or isinstance(value, bool) or not isinstance(value, (int, float)):
+                log.warning("ignoring tuned value %s.%s", section, key)
+                continue
+            obj = getattr(cfg, section)
+            old = getattr(obj, key)
+            setattr(obj, key, float(value))
+            changed[f"{section}.{key}"] = (old, float(value))
+    return changed
+
+
+def save_tuning(cfg: Config, values: dict[str, float], note: str = "") -> Path:
+    """Write the tuned values (merged with what the file already holds)."""
+    path = tuning_override_path(cfg)
+    current: dict[str, Any] = _read_toml(path) if path.is_file() else {}
+    for dotted, value in values.items():
+        section, key = dotted.split(".", 1)
+        current.setdefault(section, {})[key] = float(value)
+    lines = ["# Written by the self-tuning loop (wth-edge tune). Delete this file to go back.",
+             f"# {note}" if note else "", ""]
+    for section in sorted(current):
+        lines.append(f"[{section}]")
+        for key in sorted(current[section]):
+            lines.append(f"{key} = {float(current[section][key]):.6g}")
+        lines.append("")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text("\n".join(lines))
+    os.replace(tmp, path)
+    return path
+
+
 def from_dict(data: dict[str, Any]) -> Config:
     cfg = Config()
     for f in fields(Config):
-        if f.name == "sources" or f.name not in data:
+        if f.name in ("sources", "untuned") or f.name not in data:
             continue
         section = data[f.name]
         if not isinstance(section, dict):
