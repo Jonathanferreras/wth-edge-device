@@ -26,7 +26,9 @@ replay = ["opencv-python-headless", "av>=11"]
 ais = ["websockets>=11"]
 # Publishing to Firestore (publisher.driver = "firestore"). On the Pi: apt python3-google-auth python3-requests.
 firestore = ["google-auth>=2.15", "requests>=2.28"]
-dev = ["pytest", "google-auth>=2.15", "requests>=2.28", "httpx", "av>=11", "opencv-python-headless", "websockets>=11"]
+# Self-tuning review by Claude ([tune] reviewer = "claude", ANTHROPIC_API_KEY in secrets.env).
+tune = ["anthropic>=2.0"]
+dev = ["pytest", "anthropic>=2.0", "google-auth>=2.15", "requests>=2.28", "httpx", "av>=11", "opencv-python-headless", "websockets>=11"]
 
 [project.scripts]
 wth-edge = "wth_edge.cli:main"

@@ -199,6 +199,10 @@ if [[ ! -f "$SECRETS_FILE" ]] || ! grep -q '^WTH_WEB_PASSWORD=' "$SECRETS_FILE";
     echo "WTH_WEB_PASSWORD=$NEW_PASSWORD"
   } >>"$SECRETS_FILE"
 fi
+if ! grep -q 'ANTHROPIC_API_KEY' "$SECRETS_FILE"; then
+  # Self-tuning has Claude review recorded footage; it needs a key. Left commented out.
+  echo "# ANTHROPIC_API_KEY=sk-ant-...   (self-tuning review; see README \"Self-tuning\")" >>"$SECRETS_FILE"
+fi
 chown root:"$SERVICE_USER" "$SECRETS_FILE"; chmod 0640 "$SECRETS_FILE"
 # The Firestore service account key, if one has been copied in (see the README).
 FIREBASE_KEY="$ETC_DIR/firebase-service-account.json"
@@ -212,7 +216,7 @@ step "Building the Python environment"
 if [[ ! -x "$INSTALL_DIR/.venv/bin/python" ]]; then
   python3 -m venv --system-site-packages "$INSTALL_DIR/.venv"
 fi
-"$INSTALL_DIR/.venv/bin/pip" install --quiet --disable-pip-version-check -e "$INSTALL_DIR[firestore]"
+"$INSTALL_DIR/.venv/bin/pip" install --quiet --disable-pip-version-check -e "$INSTALL_DIR[firestore,tune]"
 ln -sf "$INSTALL_DIR/.venv/bin/wth-edge" /usr/local/bin/wth-edge
 
 # ---------------------------------------------------------------- services
