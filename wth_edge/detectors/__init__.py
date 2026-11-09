@@ -114,7 +114,8 @@ class Pipeline:
                 continue
             reading = watcher.update(frame, rois[name])
             if name == "deck":
-                self.deck.update(t, reading)
+                still = [self.lanes[n].level == "standstill" for n in LANES if n in rois]
+                self.deck.update(t, reading, watcher.vehicles, bool(still) and all(still))
             else:
                 before = self.lanes[name].level
                 changed = self.lanes[name].update(t, reading)
