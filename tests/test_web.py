@@ -90,3 +90,14 @@ def test_detection_layer_draws_cars(monkeypatch):
     assert bright("/roi/northbound.jpg") < 30
     assert bright("/roi/northbound.jpg?det=1") > 150
     assert state["vehicles"] and client.get("/snapshot.jpg?overlay=0").status_code == 200
+
+
+def test_roi_zoom_skips_boxes_on_its_edge():
+    from wth_edge.camera.base import Frame
+    from wth_edge.web.app import encode_roi_jpeg
+
+    frame = Frame(seq=1, timestamp=0.0, image=np.zeros((90, 160, 3), dtype=np.uint8))
+    roi = cfgmod.Roi(0.1, 0.1, 0.5, 0.5)
+    # A car box that only touches the ROI's bottom edge used to crash PIL (y1 > y0).
+    det = {"vehicles": [{"box": [0.2, 0.5999, 0.3, 0.7], "moving": True}, {"box": [0.3, 0.4, 0.2, 0.3], "moving": False}]}
+    assert encode_roi_jpeg(frame, roi, 70, det)[:2] == b"\xff\xd8"

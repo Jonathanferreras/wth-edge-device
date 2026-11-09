@@ -95,9 +95,12 @@ def encode_roi_jpeg(frame, roi: Roi, quality: int, det: dict | None = None) -> b
             # Frame fractions to crop pixels, kept to the boxes that overlap this ROI.
             x1, y1 = (box[0] - roi.x) / roi.w * W, (box[1] - roi.y) / roi.h * H
             x2, y2 = (box[2] - roi.x) / roi.w * W, (box[3] - roi.y) / roi.h * H
-            if x2 <= 0 or y2 <= 0 or x1 >= W or y1 >= H:
-                continue
-            d.rectangle((max(0, x1), max(0, y1), min(W - 1, x2), min(H - 1, y2)), outline=colour, width=width * 2)
+            x1, x2 = sorted((x1, x2))
+            y1, y2 = sorted((y1, y2))
+            x1, y1, x2, y2 = max(0, x1), max(0, y1), min(W - 1, x2), min(H - 1, y2)
+            if x2 <= x1 or y2 <= y1:
+                continue  # outside this ROI, or only touching its edge
+            d.rectangle((x1, y1, x2, y2), outline=colour, width=width * 2)
             if label:
                 d.text((max(0, x1) + 4, max(0, y1) + 3), label, fill=colour)
     buf = io.BytesIO()
