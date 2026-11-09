@@ -1,11 +1,15 @@
 """Claude as the reviewer: label a pair of frames the way a person watching would.
 
+Two ways to reach Claude: Claude Code on the Pi, logged in as you (``claude_code.py``, the
+default), or the Anthropic API from inside the service (``ClaudeReviewer`` below,
+``[tune] reviewer = "api"``). Both use the instructions and answer shape defined here.
+
 Each moment is two frames ``pair_gap_s`` apart with the detector boxes drawn and named.
 Two frames, because from one still a queue at the gates and moving traffic look alike.
 Claude answers in a fixed JSON shape (structured outputs), so labels compare directly
 with what the detector logged.
 
-Needs the ``anthropic`` package and ``ANTHROPIC_API_KEY`` in the service's environment
+The API reviewer needs the ``anthropic`` package and ``ANTHROPIC_API_KEY`` in the service's environment
 (``/etc/wth/secrets.env``). Without them the loop still records, counts and reports; it
 just can't tell whether the detector was right, so it doesn't tune.
 """
@@ -73,9 +77,13 @@ Use note for anything odd you notice about a box (for example, a box that misses
 takes in a pole or trees), in under 25 words; otherwise leave it empty."""
 
 
-def available(tcfg) -> tuple[bool, str]:
+def available(tcfg, data_dir=None) -> tuple[bool, str]:
     """Whether the reviewer can run here, and if not, why (shown on the panel)."""
-    if tcfg.reviewer != "claude":
+    if tcfg.reviewer == "claude-code":
+        from . import claude_code
+
+        return claude_code.available(data_dir or "/var/lib/wth")
+    if tcfg.reviewer not in ("api", "claude"):
         return False, "review is off ([tune] reviewer = \"none\")"
     try:
         import anthropic  # noqa: F401
@@ -153,3 +161,13 @@ class ClaudeReviewer:
 
 class ReviewError(RuntimeError):
     pass
+
+
+def make_reviewer(tcfg, data_dir):
+    """The reviewer for ``[tune] reviewer``: Claude Code on the Pi through the review queue
+    ("claude-code"), or the API from inside the service ("api")."""
+    if tcfg.reviewer == "claude-code":
+        from .claude_code import QueueReviewer
+
+        return QueueReviewer(tcfg, data_dir)
+    return ClaudeReviewer(tcfg)

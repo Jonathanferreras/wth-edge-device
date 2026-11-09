@@ -8,7 +8,8 @@ One round:
    second into each chunk's clip.json, like any clip. Auto-recording stands aside.
 2. **Review**, in the background while the next chunk records: the reference pass
    (``reference.py``) counts cars and boats and saves the moments to review; Claude labels
-   them (``review.py``).
+   them, by default Claude Code on the Pi through a queue folder (``claude_code.py``), or
+   the API (``review.py``).
 3. **Tune** (``analysis.py``): score the live log against the labels, fit thresholds, replay
    the recording with the old and new settings, and keep the new ones only if they score
    better. Kept settings go live at once and are saved to ``<data_dir>/tuning.toml``.
@@ -76,7 +77,7 @@ class Tuner:
 
     # ------------------------------------------------------------ panel API
     def status(self) -> dict[str, Any]:
-        ok, why = review.available(self.tcfg)
+        ok, why = review.available(self.tcfg, self.config.paths.data_dir)
         with self._lock:
             st = dict(self._status)
         st.update({
@@ -199,6 +200,10 @@ class Tuner:
                 r.update(status="interrupted", ended_at=r.get("ended_at") or p.stat().st_mtime,
                          headline="Interrupted: the device restarted during this round.")
                 p.write_text(json.dumps(r, indent=2))
+        qdir = self.root / "queue"
+        for p in qdir.glob("*.json") if qdir.is_dir() else ():
+            if not p.name.startswith("."):
+                p.unlink(missing_ok=True)  # batches of a round that no longer exists
         if not self.tcfg.keep_footage:
             for meta in list(self.store.iter_meta()):
                 if meta.get("trigger") == TRIGGER:
@@ -248,11 +253,11 @@ class Tuner:
         report: dict[str, Any] = {"id": rid, "session": sid, "round": rnd, "status": "running", "started_at": started,
                                   "duration_s": duration, "headline": "Recording"}
         self._write(rdir, report)
-        ok, why = review.available(tcfg)
+        ok, why = review.available(tcfg, self.config.paths.data_dir)
         reviewer = None
         if ok:
             try:
-                reviewer = review.ClaudeReviewer(tcfg)
+                reviewer = review.make_reviewer(tcfg, self.config.paths.data_dir)
             except Exception as exc:
                 ok, why = False, f"could not start the reviewer: {exc}"
         ref = Reference(self.config, tcfg, rdir / "frames")
@@ -274,6 +279,10 @@ class Tuner:
         self._set(phase="reviewing", message="Reviewing the last chunks")
         while worker.is_alive():
             worker.join(timeout=1.0)
+        if reviewer is not None and getattr(reviewer, "deferred", False) and not self._abort.is_set():
+            self._set(message="Waiting for Claude Code to review the frames")
+            reviewer.collect([s for r in records for s in r["samples"]], self._abort.is_set,
+                             lambda n: self._set(reviewed=n))
 
         metas = [m for m in (self.store.read_meta(c) for c in clip_ids) if m]
         samples = [s for r in records for s in r["samples"]]
@@ -414,6 +423,11 @@ class Tuner:
             if reviewer is None:
                 continue
             boxes = list(rois)
+            if getattr(reviewer, "deferred", False):
+                # Claude Code picks these up from the queue; labels are collected at the end.
+                reviewer.submit(ref.frames_dir.parent.name, cid, ref.frames_dir, boxes, self.tcfg.pair_gap_s,
+                                rec["samples"])
+                continue
             for s in rec["samples"]:
                 if self._abort.is_set():
                     break
