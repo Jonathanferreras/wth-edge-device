@@ -79,7 +79,11 @@ Profiles today:
   while traffic moves, `standstill` when the lane is filled and nothing moves for 8 s. The
   deck only reports clear or busy. The panel shows live flow and fill per lane so the
   thresholds in `[traffic_detector]` can be tuned on the real view.
-- **Boats**: background subtraction in the boat box wakes YOLOv8s (`models/yolov8s.onnx`,
+- **Boats** (`boat`, plus `boat_near` for the river close to the camera; each box has its
+  own motion gate; the model runs on the boxes that just moved or hold the crossing, and
+  takes them in turn when nothing moves, so two boxes cost about what one did; the best
+  sighting feeds one crossing tracker):
+  background subtraction in the boat boxes wakes YOLOv8s (`models/yolov8s.onnx`,
   COCO class `boat`, run through OpenCV, no PyTorch). The model also runs every 2 s when
   nothing moves, because a slow tug blends into the background. Two hits start a
   crossing; the direction locks once the boat has moved 3% of the frame width; the
@@ -89,6 +93,37 @@ Profiles today:
   `WTH_AISSTREAM_KEY`). Each vessel gets its side of the bridge, whether it is closing on
   it and an ETA. The panel plots them on a map; `wth-edge ais` prints them in a terminal.
   A local RTL-SDR receiver can feed the same table later.
+
+### Stages: what gets looked at when
+
+The detectors don't all run all the time. `wth_edge/detectors/stages.py` picks what to
+measure, starting from traffic, which is the cheapest and earliest sign of an opening:
+
+```
+traffic --(no lane moving 15 s)--> watch --(a leaf moving or up)--> track
+   ^                                 |  ^                              |
+   +--(cars moving 5 s, or no leaf --+  +----(all leaves flat 15 s)-----+
+       movement for 30 s)
+```
+
+1. **traffic**: only the lane and deck boxes. Once neither direction has moved for 15 s
+   (or the lanes can't be read), the device starts watching the bridge.
+2. **watch**: the leaves and the boat model too. A leaf opening (or already up) moves on
+   to `track`. Cars moving again, or 30 s without leaf movement, goes back to `traffic`,
+   so a red light or a crash bounces between the two. A boat (camera or AIS) keeps the
+   watch going until 2 minutes after the last sighting.
+3. **track**: the bridge is moving. Leaves every frame and the boat model at its full
+   rate, so the boat's path is followed while it is in view. All leaves flat for 15 s goes
+   back to `watch`, and from there cars moving goes back to `traffic`.
+
+Without lane boxes there is nothing to gate on, so the pipeline stays in `watch`/`track`.
+In `traffic` the leaves are not measured; their state reads `closed` with `assumed: true`,
+since flowing traffic means the bridge is down.
+The boat motion gate keeps learning the river in every stage (it is cheap) so the watch
+doesn't start on a stale background; boats under a closed bridge with traffic flowing
+are not tracked. All times are in `[stages]`; `enabled = false` runs every detector on
+every frame as before (handy for `wth-edge eval` on boat-only clips). The panel shows the
+stage, why it was entered and the countdown back to `traffic`.
 
 ### The state machine
 

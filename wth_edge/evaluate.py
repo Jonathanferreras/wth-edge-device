@@ -69,6 +69,7 @@ def evaluate_clip(config, video: Path, meta: dict[str, Any], rois: dict, size) -
     events: list[dict[str, Any]] = []
     positions: list[str] = []
     phases: list[str] = []
+    stages: list[str] = []
     levels: dict[str, list[str]] = {}
     angles: list[float] = []
     n, t_end, t0 = 0, 0.0, time.perf_counter()
@@ -82,6 +83,8 @@ def evaluate_clip(config, video: Path, meta: dict[str, Any], rois: dict, size) -
             positions.append(st["bridge"]["position"])
         if st.get("opening") and (not phases or phases[-1] != st["opening"]["phase"]):
             phases.append(st["opening"]["phase"])
+        if st.get("stage") and (not stages or stages[-1] != st["stage"]["stage"]):
+            stages.append(st["stage"]["stage"])
         for name, lane in (st.get("traffic") or {}).items():
             seen = levels.setdefault(name, [])
             if not seen or seen[-1] != lane["level"]:
@@ -111,6 +114,7 @@ def evaluate_clip(config, video: Path, meta: dict[str, Any], rois: dict, size) -
         "best_confidence": max((e.get("confidence") or 0 for e in ends), default=0.0),
         "bridge_positions": positions,
         "phases": phases,
+        "stages": stages,
         "traffic": levels,
         "angle_min": round(min(angles), 1) if angles else None,
         "angle_max": round(max(angles), 1) if angles else None,

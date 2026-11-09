@@ -1,5 +1,9 @@
 """Detectors: leaf angles, traffic per lane, boat crossings, and the opening state machine.
 
+What gets measured depends on the stage (``stages.py``): traffic only while cars flow,
+then the leaves and boats once traffic has stopped, then everything at full rate while
+the bridge moves. ``[stages] enabled = false`` measures everything on every frame.
+
 ``Pipeline`` is frame in, events and state out, with no threads or camera, so the live
 device and ``wth-edge eval`` run exactly the same code. ``DetectorRunner`` feeds it from
 the FrameBus in a thread and hands events to listeners (auto-recording, the publisher).
@@ -30,6 +34,15 @@ def opencv_available() -> bool:
 LANES = ("northbound", "southbound")
 # Leaf boxes: "bridge" is the near leaf (the old single box), "far_leaf" the other one.
 LEAVES = {"bridge": "near", "far_leaf": "far"}
+# Boat boxes: "boat" is the channel and the river beyond, "boat_near" the stretch of river
+# close to the camera that the main box can't cover without taking in the trees. Each gets
+# its own motion gate and model run; the best sighting of the frame feeds one tracker.
+BOAT_ROIS = ("boat", "boat_near")
+
+
+def _best(sightings):
+    found = [s for s in sightings if s is not None]
+    return max(found, key=lambda s: s.confidence) if found else None
 
 
 class Pipeline:
@@ -38,6 +51,7 @@ class Pipeline:
         from ..opening import OpeningMachine
         from .boat import BoatTracker, MotionGate, YoloBoat
         from .bridge import BridgeTracker
+        from .stages import StageMachine
         from .traffic import DeckTracker, LaneTracker, LaneWatcher
 
         self.config = config
@@ -49,8 +63,9 @@ class Pipeline:
         self.lanes = {name: LaneTracker(tcfg) for name in LANES} if tcfg.enabled else {}
         self.watchers = {name: LaneWatcher(tcfg) for name in (*LANES, "deck")} if tcfg.enabled else {}
         self.deck = DeckTracker(tcfg) if tcfg.enabled else None
+        self.stages = StageMachine(config.stages) if config.stages.enabled else None
         self.machine = OpeningMachine(config.opening, bcfg, config.site.approach_sides, history) if config.opening.enabled else None
-        self.motion = MotionGate(boat) if boat.enabled else None
+        self.motion = {name: MotionGate(boat) for name in BOAT_ROIS} if boat.enabled else {}
         self.yolo = None
         self.yolo_error: str | None = None
         if boat.enabled and boat.confirm == "yolo":
@@ -63,7 +78,11 @@ class Pipeline:
                                  require_travel=self.yolo is None) if boat.enabled else None
         self._last_yolo = 0.0
         self._last_motion_at: float | None = None
+        self._box_motion_at: dict[str, float] = {}
+        self._crossing_box: str | None = None   # the box the current crossing was last seen in
+        self._idle_turn = 0
         self.last_ms: float = 0.0
+        self.last_t: float | None = None
 
     def process(self, t: float, frame: np.ndarray, hires=None, ais: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         """``frame``: the lores RGB frame. ``hires``: an optional ``HiRes`` full-res frame,
@@ -72,9 +91,15 @@ class Pipeline:
         from .bridge import measure_angle
 
         t0 = time.perf_counter()
+        self.last_t = t
         events: list[dict[str, Any]] = []
         rois = self.rois
+        leaves_on = self.stages is None or self.stages.looks_at_leaves
+        boats_on = self.stages is None or self.stages.looks_for_boats
+        tracking = self.stages is not None and self.stages.stage == "track"
         for name, which in LEAVES.items():
+            if not leaves_on:
+                break
             tracker = self.bridge if which == "near" else self.far_leaf
             if tracker is None or name not in rois:
                 continue
@@ -95,28 +120,75 @@ class Pipeline:
                 changed = self.lanes[name].update(t, reading)
                 if changed:
                     events.append({"type": "traffic", "at": t, "direction": name, "level": changed, "previous": before})
-        if self.boats is not None and "boat" in rois:
+        boat_rois = [name for name in BOAT_ROIS if name in rois]
+        if self.boats is not None and boat_rois:
             cfg = self.config.boat_detector
-            moving = self.motion.update(frame, rois["boat"]) if self.motion else None
+            # The motion gates are cheap and keep learning the river in every stage, so they
+            # don't fire on a stale background when the watch starts.
+            seen = {name: self.motion[name].update(frame, rois[name]) for name in boat_rois}
+            for name, sighting in seen.items():
+                if sighting is not None:
+                    self._box_motion_at[name] = t
+            moving = _best(seen.values())
             if moving is not None:
                 self._last_motion_at = t
-            if self.yolo is not None:
+            if not boats_on:
+                events += self.boats.tick(t)  # only let a crossing in progress end
+            elif self.yolo is not None:
                 # Motion or an open crossing runs the model often; otherwise it still looks
                 # now and then, because a slow tug fades into the motion background.
-                busy = (self._last_motion_at is not None and t - self._last_motion_at < 2.0) or self.boats.current is not None
+                busy = (tracking or (self._last_motion_at is not None and t - self._last_motion_at < 2.0)
+                        or self.boats.current is not None)
                 hz = cfg.yolo_max_hz if busy else cfg.yolo_idle_hz
                 if hz > 0 and t - self._last_yolo >= 1.0 / hz:
                     self._last_yolo = t
                     src = hires.rgb() if hires is not None else frame
-                    events += self.boats.update(t, self.yolo.detect(src, rois["boat"]))
+                    events += self.boats.update(t, self._yolo_look(t, src, boat_rois))
                 else:
                     events += self.boats.tick(t)
             else:
                 events += self.boats.update(t, moving)
+        if self.stages is not None:
+            events += self.stages.update(t, self._stage_inputs(ais))
         if self.machine is not None:
             events += self.machine.update(t, self.signals(ais))
         self.last_ms = (time.perf_counter() - t0) * 1000
         return events
+
+    def _yolo_look(self, t: float, src, boat_rois: list[str]):
+        """One model look. The model is the expensive part (~0.7 s a box on a Pi 5), so it
+        runs on the boxes where something just moved and the box holding the crossing; with
+        nothing going on it takes the boxes in turn."""
+        names = [n for n in boat_rois if t - self._box_motion_at.get(n, -1e9) < 2.0]
+        if self.boats.current is not None and self._crossing_box in boat_rois and self._crossing_box not in names:
+            names.append(self._crossing_box)
+        if not names:
+            names = [boat_rois[self._idle_turn % len(boat_rois)]]
+            self._idle_turn += 1
+        best, best_name = None, None
+        for name in names:
+            s = self.yolo.detect(src, self.rois[name])
+            if s is not None and (best is None or s.confidence > best.confidence):
+                best, best_name = s, name
+        if best is not None:
+            self._crossing_box = best_name
+        return best
+
+    def _stage_inputs(self, ais: dict[str, Any] | None = None):
+        from .stages import StageInputs
+
+        lanes = {name: (tr.moving if tr.level != "unknown" else None) for name, tr in self.lanes.items()
+                 if name in self.rois}
+        leaves = None
+        if self.stages is not None and self.stages.looks_at_leaves:
+            positions = [tr.position for tr in (self.bridge, self.far_leaf)
+                         if tr is not None and tr.position != "unknown"]
+            if any(p in ("opening", "open", "closing") for p in positions):
+                leaves = "active"
+            elif positions:
+                leaves = "flat"
+        boat = (self.boats is not None and self.boats.present) or bool(ais and ais.get("approaching"))
+        return StageInputs(lanes, leaves, boat)
 
     def signals(self, ais: dict[str, Any] | None = None):
         """What the state machine sees, built from the trackers."""
@@ -130,6 +202,8 @@ class Pipeline:
         if self.deck is not None:
             s.deck_clear, s.deck_moving = self.deck.clear, self.deck.moving
         for which, tr in (("near", self.bridge), ("far", self.far_leaf)):
+            if self.stages is not None and not self.stages.looks_at_leaves:
+                break  # not watching the leaves: their last reading is stale
             if tr is not None and tr.angle is not None and tr.position != "unknown":
                 s.leaf_angles[which] = tr.angle
                 s.leaf_rates[which] = tr.rate
@@ -141,10 +215,22 @@ class Pipeline:
             s.ais_side, s.ais_eta_s, s.ais_name = v.get("side"), v.get("eta_s"), v.get("name")
         return s
 
+    def _leaf_state(self, tr) -> dict[str, Any]:
+        if tr is None:
+            return {"position": "unknown", "confidence": 0.0}
+        st = tr.state()
+        st["watching"] = self.stages is None or self.stages.looks_at_leaves
+        if not st["watching"]:
+            # Stage 1 only runs while traffic flows, and flowing traffic means the bridge is
+            # down, so say so rather than "unknown". No line: it would be a stale one.
+            st.update(position="closed", assumed=True, angle_deg=None, line=None)
+        return st
+
     def state(self) -> dict[str, Any]:
         return {
-            "bridge": self.bridge.state() if self.bridge else {"position": "unknown", "confidence": 0.0},
-            "far_leaf": self.far_leaf.state() if self.far_leaf else {"position": "unknown", "confidence": 0.0},
+            "stage": self.stages.state(self.last_t) if self.stages else None,
+            "bridge": self._leaf_state(self.bridge),
+            "far_leaf": self._leaf_state(self.far_leaf),
             "traffic": {name: tr.state() for name, tr in self.lanes.items()},
             "deck": self.deck.state() if self.deck else None,
             "opening": self.machine.state() if self.machine else None,

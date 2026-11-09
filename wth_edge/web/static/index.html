@@ -116,6 +116,7 @@
       <div class="phase" id="phase"></div>
       <div class="note" id="bridgenote">No detector running yet.</div>
       <div class="note" id="waitnote"></div>
+      <div class="note" id="stagenote"></div>
       <div class="lanes">
         <div class="lane"><div class="k">Northbound</div><div class="v lv-unknown" id="nb">unknown</div><div class="note" id="nbnote" style="margin-top:2px"></div></div>
         <div class="lane"><div class="k">Southbound</div><div class="v lv-unknown" id="sb">unknown</div><div class="note" id="sbnote" style="margin-top:2px"></div></div>
@@ -200,7 +201,12 @@ async function tick() {
       $(id).textContent = l.level || "unknown"; $(id).className = `v lv-${l.level || "unknown"}`;
       $(id + "note").textContent = l.flow == null ? (det ? "no box" : "") : `flow ${l.flow.toFixed(3)} · fill ${l.fill.toFixed(2)}`;
     }
-    const leaf = (x, n) => x.angle_deg == null ? `${n} –` : `${n} ${x.angle_deg}° ${x.position}`;
+    const sg = s.stage;
+    const stageLabel = { traffic: "1 · watching traffic", watch: "2 · watching the bridge", track: "3 · tracking the opening" };
+    $("stagenote").textContent = !sg ? "" : `Stage ${stageLabel[sg.stage] || sg.stage} · since ${ago(sg.since)}${sg.reason ? ` (${sg.reason.replaceAll("_", " ")})` : ""}`
+      + (sg.stopped_for_s != null ? ` · stopped ${Math.round(sg.stopped_for_s)} s` : "")
+      + (sg.quiet_left_s != null ? ` · back to traffic in ${Math.round(sg.quiet_left_s)} s${sg.boat_seen ? " (boat seen)" : ""}` : "");
+    const leaf = (x, n) => x.watching === false ? `${n} not watched` : x.angle_deg == null ? `${n} –` : `${n} ${x.angle_deg}° ${x.position}`;
     $("leafnote").textContent = det ? `${leaf(b, "near leaf")} · ${leaf(far, "far leaf")}${s.deck ? ` · deck ${s.deck.clear == null ? "–" : s.deck.clear ? "clear" : "busy"}` : ""}` : "";
     updateAis(s);
     const boat = s.boat || {};
