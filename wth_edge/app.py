@@ -102,7 +102,7 @@ class Device:
 
     def _on_detections(self, events: list[dict[str, Any]], st: dict[str, Any]) -> None:
         with self._lock:
-            for key in ("stage", "bridge", "far_leaf", "traffic", "deck", "opening", "boat", "detector", "ais"):
+            for key in ("stage", "bridge", "far_leaf", "traffic", "deck", "vehicles", "opening", "boat", "detector", "ais"):
                 if key in st:
                     self._state[key] = st[key]
         for e in events:
