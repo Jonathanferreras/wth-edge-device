@@ -168,7 +168,7 @@ def encode_jpeg(image, quality: int, rois: dict | None = None, det: dict | None 
 
 
 def create_app(config, bus: FrameBus, get_state: Callable[[], dict[str, Any]], recorder=None, store=None,
-               tuner=None) -> FastAPI:
+               tuner=None, tracer=None) -> FastAPI:
     app = FastAPI(title="Watch The Hutch device", docs_url=None, redoc_url=None, openapi_url=None)
     password = os.environ.get("WTH_WEB_PASSWORD", "")
     basic = HTTPBasic(auto_error=False)
@@ -325,6 +325,33 @@ def create_app(config, bus: FrameBus, get_state: Callable[[], dict[str, Any]], r
     @app.get("/clips/{clip_id}.json", dependencies=[Depends(auth)])
     def clip_meta(clip_id: str) -> FileResponse:
         return FileResponse(clip_file(clip_id, "meta"), media_type="application/json")
+
+    # ---- detector replay of a clip (trace.py) ----
+    def need_tracer():
+        if tracer is None:
+            raise HTTPException(404, "replay is not available")
+        return tracer
+
+    @app.get("/api/clips/{clip_id}/trace", dependencies=[Depends(auth)])
+    def trace_status(clip_id: str) -> dict:
+        clip_file(clip_id, "meta")
+        return need_tracer().status(clip_id)
+
+    @app.post("/api/clips/{clip_id}/trace", dependencies=[Depends(auth)])
+    def trace_start(clip_id: str) -> dict:
+        from ..trace import TraceError
+
+        clip_file(clip_id, "video")
+        if recorder and recorder.status()["clip_id"] == clip_id:
+            raise HTTPException(409, "clip is still recording")
+        try:
+            return need_tracer().start(clip_id)
+        except TraceError as exc:
+            raise HTTPException(409, str(exc)) from exc
+
+    @app.get("/clips/{clip_id}.trace", dependencies=[Depends(auth)])
+    def clip_trace(clip_id: str) -> FileResponse:
+        return FileResponse(clip_file(clip_id, "trace"), media_type="application/json")
 
     @app.patch("/api/clips/{clip_id}", dependencies=[Depends(auth)])
     def clip_update(clip_id: str, body: dict = Body(...)) -> dict:
