@@ -216,9 +216,10 @@ class GateDetectorSection:
     swing_min_share: float = 0.35
     # The angle is the median over this window (shorter than smooth_s, so the box keeps up).
     angle_smooth_s: float = 1.0
-    # Stop drawing an arm this long after it is down: a lowered arm lies along the road,
+    # Stop drawing an arm this long after it reads down (it reads down mid-swing, once it
+    # leaves its box, and swings for 6-10 s): a lowered arm lies along the road,
     # foreshortened, and the angle then follows the railing or the kerb.
-    down_line_s: float = 4.0
+    down_line_s: float = 8.0
 
 
 @dataclass

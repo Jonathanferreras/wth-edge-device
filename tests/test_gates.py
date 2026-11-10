@@ -186,5 +186,5 @@ def test_lowered_arm_stops_being_drawn():
     feed(tr, 0, 10, 90)
     feed(tr, 10, 14, 10)
     assert tr.position == "down" and tr.state()["line"] is not None
-    feed(tr, 14, 30, 10)
+    feed(tr, 14, 40, 10)
     assert tr.state()["line"] is None
