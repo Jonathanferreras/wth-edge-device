@@ -187,7 +187,8 @@ class GateDetectorSection:
     Each box is drawn around a raised arm. The arms are yellow-orange, so the reading is the
     share of the box's rows with arm-coloured pixels: most rows with the arm up, only the
     housing at the bottom with it down. (Edges don't work: with the arm gone the trees
-    behind give long vertical lines.) Colour needs daylight; a dark box reads "unknown".
+    behind give long vertical lines.) Low sun shifts the colour, so
+    the arm as a bright stripe counts too. Both need light; a dark box reads "unknown".
     Hue is OpenCV's 0-180 scale.
     """
 
@@ -201,8 +202,15 @@ class GateDetectorSection:
     # in between not counted.
     up_min: float = 0.7
     down_max: float = 0.3
-    # A box darker than this (mean grey 0-255) can't show the colour: "unknown".
-    dark_below: float = 40.0
+    # The second cue, for when low sun shifts the arm's colour: the share of rows where the
+    # arm's column is at least contrast_min grey levels brighter than its surroundings.
+    # "up" when colour or contrast says so; "down" only when both do.
+    contrast_min: float = 25.0
+    contrast_up_min: float = 0.55
+    contrast_down_max: float = 0.25
+    # A box darker than this (mean grey 0-255) can't show the arm: "unknown". Night boxes
+    # measure 11-59 on this camera.
+    dark_below: float = 75.0
     # Majority of the readings over this window; a change must hold for hold_s.
     smooth_s: float = 3.0
     hold_s: float = 2.0

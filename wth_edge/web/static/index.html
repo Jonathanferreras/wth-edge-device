@@ -650,7 +650,7 @@ function roiReadings(name, s) {
   if (name === "gate" || name.startsWith("gate_")) {
     const g = s.gates || {}, arm = (g.arms || {})[name] || {}, pos = arm.position || "unknown";
     return [["Barrier arm", pos, pos === "up" ? "ok" : pos === "down" ? "warn" : "lv-unknown",
-      !det ? "detectors off" : pos === "unknown" ? (arm.dark ? "too dark to see the arm" : "can't tell") : `${arm.angle_deg != null ? arm.angle_deg + "° · " : ""}${Math.round((arm.share || 0) * 100)}% arm colour · all arms: ${g.summary || "unknown"}`]];
+      !det ? "detectors off" : pos === "unknown" ? (arm.dark ? "too dark to see the arm" : "can't tell") : `${arm.angle_deg != null ? arm.angle_deg + "° · " : ""}colour ${Math.round((arm.share || 0) * 100)}% · stripe ${Math.round((arm.contrast || 0) * 100)}% · all arms: ${g.summary || "unknown"}`]];
   }
   if (name.startsWith("boat")) {
     const bt = s.boat || {};
@@ -872,7 +872,7 @@ function drawOverlay() {
       g.strokeStyle = TR_DETECT; g.lineWidth = 2; g.beginPath();
       g.moveTo(x1 + nx, y1 + ny); g.lineTo(x2 + nx, y2 + ny); g.lineTo(x2 - nx, y2 - ny); g.lineTo(x1 - nx, y1 - ny); g.closePath(); g.stroke();
     }
-    if (r) { const [x, y] = P(r.x, r.y + r.h); label(`${a.pos}${a.ang != null ? " " + a.ang + "°" : ""} ${Math.round((a.share || 0) * 100)}%`, x, y + 2, a.pos === "down" ? TR_DETECT : "#f5f5f7"); }
+    if (r) { const [x, y] = P(r.x, r.y + r.h); label(`${a.pos}${a.ang != null ? " " + a.ang + "°" : ""} ${Math.round(Math.max(a.share || 0, a.contrast || 0) * 100)}%`, x, y + 2, a.pos === "down" ? TR_DETECT : "#f5f5f7"); }
   }
   for (const [n, lane] of Object.entries(f.traffic || {})) {
     const r = trace.rois[n];
@@ -897,7 +897,7 @@ function drawReadout() {
   const f = trace && traceIdx >= 0 ? trace.frames[traceIdx] : null;
   if (!f) return;
   const items = [["Time", `${f.t.toFixed(1)} s`], ["Phase", f.phase || "–"], ["Barriers", f.gate_summary || "unknown"]];
-  for (const [n, a] of Object.entries(f.gates || {})) items.push([fmt.name(n), `${a.pos}${a.ang != null ? " " + a.ang + "°" : ""} · ${Math.round((a.share || 0) * 100)}%`]);
+  for (const [n, a] of Object.entries(f.gates || {})) items.push([fmt.name(n), `${a.pos}${a.ang != null ? " " + a.ang + "°" : ""} · ${Math.round(Math.max(a.share || 0, a.contrast || 0) * 100)}%`]);
   for (const [k, n] of [["bridge", "Near leaf"], ["far_leaf", "Far leaf"]]) if (k in trace.rois) items.push([n, `${f[k]?.pos || "–"}${f[k]?.ang != null ? " " + f[k].ang + "°" : ""}`]);
   for (const [n, l] of Object.entries(f.traffic || {})) if (n in trace.rois) items.push([fmt.name(n), `${l.lv} · ${(l.flow ?? 0).toFixed(3)} / ${(l.fill ?? 0).toFixed(2)}`]);
   if (f.deck && "deck" in trace.rois) items.push(["Deck", f.deck.clear == null ? "unknown" : f.deck.clear ? "clear" : "busy"]);

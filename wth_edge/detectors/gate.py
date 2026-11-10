@@ -2,7 +2,9 @@
 
 Each ``gate_*`` box is drawn around one raised arm. The arms are yellow-orange, so
 ``measure_gate`` counts the share of the box's rows that hold arm-coloured pixels: nearly
-all of them with the arm up, only the housing at the bottom with it down. Straight edges
+all of them with the arm up, only the housing at the bottom with it down. Low sun turns
+the arms pink, out of the colour range, so a second cue counts too: the arm as a bright
+stripe against its surroundings. Either cue says "up"; "down" needs both to agree. Straight edges
 were tried first and fail: with the arm gone, the trees behind the box give long vertical
 lines that read as an arm.
 
@@ -27,8 +29,9 @@ POSITIONS = ("up", "down", "unknown")
 
 @dataclass
 class GateReading:
-    share: float                 # share of the box's rows with arm pixels
-    dark: bool                   # too dark to see the colour
+    share: float                 # share of the box's rows with arm-coloured pixels
+    dark: bool                   # too dark to see the arm
+    contrast: float = 0.0        # share of the rows where the arm's column stands out as brighter
     angle_deg: float | None = None  # the arm's direction from its base, 0-180 (90 = up)
     pivot: tuple[float, float] | None = None  # the base, in frame fractions
     length: float = 0.0          # the arm's length (the box height), in frame fractions of the height
@@ -37,9 +40,9 @@ class GateReading:
     def position(self, cfg) -> str | None:
         if self.dark:
             return None
-        if self.share >= cfg.up_min:
+        if self.share >= cfg.up_min or self.contrast >= cfg.contrast_up_min:
             return "up"
-        if self.share <= cfg.down_max:
+        if self.share <= cfg.down_max and self.contrast <= cfg.contrast_down_max:
             return "down"
         return None
 
@@ -65,10 +68,26 @@ def measure_gate(frame: np.ndarray, roi, cfg, side: str | None = None) -> GateRe
     crop = frame[y1:y2, x1:x2]
     dark = float(crop.mean()) < cfg.dark_below
     rows = arm_mask(crop, cfg).any(axis=1)
-    reading = GateReading(float(rows.mean()), dark)
+    reading = GateReading(float(rows.mean()), dark, _contrast(frame, x1, y1, x2, y2, cfg))
     if not dark:
         _swing(frame, (x1 + x2) / 2, y2, y2 - y1, cfg, reading, side)
     return reading
+
+
+def _contrast(frame: np.ndarray, x1: int, y1: int, x2: int, y2: int, cfg) -> float:
+    """The arm as a bright stripe, whatever its colour: the share of the box's rows where the
+    box's brightest column (give or take a pixel) is clearly brighter than the row's median
+    over the box and a box-width of surroundings on each side. Low sun turns the arms pink,
+    out of the colour mask, but they stay the brightest thin thing in the box."""
+    import cv2
+
+    bw = x2 - x1
+    wide = frame[y1:y2, max(0, x1 - bw):min(frame.shape[1], x2 + bw)]
+    grey = cv2.cvtColor(wide, cv2.COLOR_RGB2GRAY).astype(np.int16)
+    off = x1 - max(0, x1 - bw)
+    col = off + int(np.argmax(grey[:, off:off + bw].mean(axis=0)))
+    stripe = grey[:, max(0, col - 1):col + 2].max(axis=1)
+    return float((stripe - np.median(grey, axis=1) >= cfg.contrast_min).mean())
 
 
 SWING_RANGE = {"right": (0.0, 95.0), "left": (85.0, 180.0)}
@@ -121,6 +140,7 @@ class GateTracker:
         self._candidate: str | None = None
         self._candidate_since = 0.0
         self.share: float | None = None
+        self.contrast: float | None = None
         self.dark = False
         self.pivot: tuple[float, float] | None = None
         self.length = 0.0
@@ -136,7 +156,7 @@ class GateTracker:
         while self._seen and t - self._seen[0][0] > cfg.smooth_s:
             self._seen.popleft()
         if reading is not None:
-            self.share, self.dark = reading.share, reading.dark
+            self.share, self.contrast, self.dark = reading.share, reading.contrast, reading.dark
             if reading.pivot is not None:
                 self.pivot, self.length, self.aspect = reading.pivot, reading.length, reading.aspect
             if reading.angle_deg is not None:
@@ -191,7 +211,8 @@ class GateTracker:
     def state(self) -> dict[str, Any]:
         angle = self.angle
         return {"position": self.position, "confidence": self.confidence, "since": self.since,
-                "share": None if self.share is None else round(self.share, 2), "dark": self.dark,
+                "share": None if self.share is None else round(self.share, 2),
+                "contrast": None if self.contrast is None else round(self.contrast, 2), "dark": self.dark,
                 "angle_deg": None if angle is None else round(angle), "line": self.line()}
 
 

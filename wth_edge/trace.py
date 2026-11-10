@@ -42,7 +42,7 @@ def frame_record(t: float, st: dict[str, Any]) -> dict[str, Any]:
         leaf = st.get(key) or {}
         rec[key] = {"pos": leaf.get("position"), "ang": leaf.get("angle_deg"), "line": leaf.get("line")}
     gates = st.get("gates") or {}
-    rec["gates"] = {name: {"pos": a.get("position"), "share": a.get("share"), "ang": a.get("angle_deg"),
+    rec["gates"] = {name: {"pos": a.get("position"), "share": a.get("share"), "contrast": a.get("contrast"), "ang": a.get("angle_deg"),
                            "line": a.get("line")}
                     for name, a in (gates.get("arms") or {}).items()}
     rec["gate_summary"] = gates.get("summary")

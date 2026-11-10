@@ -20,7 +20,10 @@ ROI = cfgmod.Roi(x=0.40, y=0.30, w=0.03, h=0.30)
 ORANGE, TREES = (230, 160, 40), (150, 90, 120)  # the arm, and the pink NoIR trees behind it
 
 
-def arm(angle: float | None, w=1280, h=720, light=1.0) -> np.ndarray:
+PINK = (235, 170, 185)  # the arm in low sun on the NoIR camera: bright, but not orange
+
+
+def arm(angle: float | None, w=1280, h=720, light=1.0, colour=ORANGE) -> np.ndarray:
     """An RGB scene with trees behind, a post, and an orange arm at ``angle`` (90 = up,
     None = no arm) pivoting on the bottom middle of ROI."""
     img = np.zeros((h, w, 3), np.uint8)
@@ -34,7 +37,7 @@ def arm(angle: float | None, w=1280, h=720, light=1.0) -> np.ndarray:
     cv2.rectangle(img, (px - 4, py - 12), (px + 4, py + 10), ORANGE, -1)  # the housing
     if angle is not None:
         tip = (int(px + np.cos(np.radians(angle)) * length), int(py - np.sin(np.radians(angle)) * length))
-        cv2.line(img, (px, py), tip, ORANGE, 5)
+        cv2.line(img, (px, py), tip, colour, 5)
     return (img.astype(np.float32) * light).astype(np.uint8)
 
 
@@ -43,6 +46,16 @@ def test_measure_gate(angle, want):
     cfg = cfgmod.GateDetectorSection()
     r = measure_gate(arm(angle), ROI, cfg)
     assert r.position(cfg) == want and not r.dark
+
+
+def test_measure_gate_low_sun_arm_is_still_up():
+    """Dusk on 2026-11-10: the arms' hue slid out of the mask and three of four read down."""
+    cfg = cfgmod.GateDetectorSection()
+    r = measure_gate(arm(90, colour=PINK), ROI, cfg)
+    assert r.share < cfg.down_max and r.contrast > cfg.contrast_up_min
+    assert r.position(cfg) == "up"
+    gone = measure_gate(arm(None), ROI, cfg)
+    assert gone.contrast < cfg.contrast_down_max and gone.position(cfg) == "down"
 
 
 @pytest.mark.parametrize("angle", [90, 60, 30, 135])
