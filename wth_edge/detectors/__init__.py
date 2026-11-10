@@ -81,8 +81,7 @@ class Pipeline:
             except Exception as exc:  # missing model or an OpenCV without DNN
                 self.yolo_error = str(exc)
                 log.warning("boat model unavailable (%s); confirming boats by motion only", exc)
-        self.boats = BoatTracker(boat, config.site.left_is, config.site.right_is,
-                                 require_travel=self.yolo is None) if boat.enabled else None
+        self.boats = BoatTracker(boat, config.site.left_is, config.site.right_is) if boat.enabled else None
         self._last_yolo = 0.0
         self._last_motion_at: float | None = None
         self._box_motion_at: dict[str, float] = {}

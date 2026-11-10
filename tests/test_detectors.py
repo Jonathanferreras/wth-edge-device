@@ -72,18 +72,30 @@ def test_boat_tracker_direction_and_end():
     for i in range(10):  # moving right to left: east to west
         x = 0.8 - i * 0.01
         events += tr.update(i * 0.5, Sighting((x, 0.7, x + 0.05, 0.8), 0.5, "yolo"))
-    assert [e["type"] for e in events] == ["boat_started", "boat_direction"]
+    # Announced once it has travelled, so the start already carries the direction.
+    assert [(e["type"], e["direction"]) for e in events] == [("boat_started", "e2w")]
     assert tr.present and tr.state()["direction"] == "e2w"
     assert tr.tick(10.0) == []
     end = tr.tick(5.0 + cfg.gone_s)
     assert end[0]["type"] == "boat_ended" and end[0]["direction"] == "e2w" and not tr.present
 
 
-def test_motion_only_needs_travel():
-    tr = BoatTracker(cfgmod.BoatDetectorSection(), require_travel=True)
+def test_a_boat_must_travel():
+    tr = BoatTracker(cfgmod.BoatDetectorSection())
     for i in range(10):  # ripples in one place
         tr.update(i * 0.5, Sighting((0.5, 0.7, 0.52, 0.72), 0.3, "motion"))
     assert not tr.present
+
+
+def test_a_rock_the_model_calls_a_boat_is_not_a_crossing():
+    """Low water on 2026-11-10: a rock at one spot scored up to 0.63 as a boat for minutes."""
+    tr = BoatTracker(cfgmod.BoatDetectorSection())
+    events = []
+    for i in range(600):
+        x = 0.899 + 0.001 * (i % 2)
+        events += tr.update(i * 0.5, Sighting((x, 0.734, x + 0.007, 0.746), 0.55, "yolo"))
+    events += tr.tick(600.0)
+    assert events == [] and not tr.present and tr.state()["box"] is None
 
 
 class FakeRecorder:

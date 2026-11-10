@@ -156,9 +156,10 @@ class Crossing:
 class BoatTracker:
     """Sightings in, crossing events out."""
 
-    def __init__(self, cfg, left_is: str = "WEST", right_is: str = "EAST", require_travel: bool = False) -> None:
+    def __init__(self, cfg, left_is: str = "WEST", right_is: str = "EAST", require_travel: bool = True) -> None:
         self.cfg = cfg
-        # Motion-only mode: ripples move too, so a crossing only counts once it has travelled.
+        # A crossing only counts once it has travelled ``min_travel``: ripples move without
+        # going anywhere, and the model takes a rock exposed at low water for a boat.
         self.require_travel = require_travel
         self.left, self.right = left_is.upper(), right_is.upper()
         self.current: Crossing | None = None
