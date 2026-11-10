@@ -66,3 +66,30 @@ x = 0.24
 y = 0.42
 w = 0.10
 h = 0.18
+
+# The barrier arms, left to right, each box around the arm standing up. Up lets traffic
+# through; the arms come down before the bridge opens. Marked by hand on clip
+# 20261109T183046Z (Nov 10 2026).
+[site.rois.gate_1]
+x = 0.014
+y = 0.561
+w = 0.023
+h = 0.166
+
+[site.rois.gate_2]
+x = 0.156
+y = 0.600
+w = 0.020
+h = 0.141
+
+[site.rois.gate_3]
+x = 0.174
+y = 0.558
+w = 0.013
+h = 0.107
+
+[site.rois.gate_4]
+x = 0.275
+y = 0.561
+w = 0.015
+h = 0.107

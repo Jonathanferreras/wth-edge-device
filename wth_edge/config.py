@@ -180,6 +180,37 @@ class BridgeDetectorSection:
 
 
 @dataclass
+class GateDetectorSection:
+    """The barrier arms at the ends of the span, one box per arm (``gate_*`` ROIs).
+
+    An arm standing up (about 90 degrees) lets traffic through; the arms come down before
+    the bridge opens. Each box is drawn around a raised arm, so a long near-vertical line in
+    it means "up". A lowered arm lies across the road, out of its narrow box, so "down" is
+    the arm going missing from a box where it is normally seen. A horizontal line is no
+    help: the road and the field edge give one with the arm up. Pixel parameters are for a
+    1280-wide frame and scale with it.
+    """
+
+    enabled: bool = True
+    canny_low: int = 40
+    canny_high: int = 150
+    hough_threshold: int = 15
+    max_line_gap_px: int = 4
+    # "up": a line at least this steep, at least this share of the box height.
+    up_min_deg: float = 70.0
+    up_min_frac: float = 0.45
+    # A box darker than this (mean grey 0-255) can't show a missing arm: "unknown", not "down".
+    dark_below: float = 40.0
+    # The arm counts as up while it was seen this recently...
+    up_window_s: float = 5.0
+    # ...and down once it has been missing this long, from a box where it is usually seen:
+    # at least trust_min of the seconds over the last trust_s.
+    down_after_s: float = 8.0
+    trust_s: float = 120.0
+    trust_min: float = 0.5
+
+
+@dataclass
 class BoatDetectorSection:
     """Motion in the boat ROI wakes a YOLO model (ONNX through OpenCV) that confirms it."""
 
@@ -283,6 +314,8 @@ class OpeningSection:
     enabled: bool = True
     # Both directions standstill with the deck clear this long -> gates_down.
     gates_down_hold_s: float = 20.0
+    # The same with the barrier arms seen down: the strongest sign an opening is coming.
+    gates_seen_hold_s: float = 3.0
     # gates_down with no lift and no boat for this long -> back to flowing.
     false_alarm_s: float = 180.0
     # Leaf steady and high this long -> raised; flat this long -> releasing.
@@ -453,6 +486,7 @@ class Config:
     recording: RecordingSection = field(default_factory=RecordingSection)
     detectors: DetectorsSection = field(default_factory=DetectorsSection)
     bridge_detector: BridgeDetectorSection = field(default_factory=BridgeDetectorSection)
+    gate_detector: GateDetectorSection = field(default_factory=GateDetectorSection)
     boat_detector: BoatDetectorSection = field(default_factory=BoatDetectorSection)
     traffic_detector: TrafficDetectorSection = field(default_factory=TrafficDetectorSection)
     opening: OpeningSection = field(default_factory=OpeningSection)
