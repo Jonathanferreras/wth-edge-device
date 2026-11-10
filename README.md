@@ -214,6 +214,16 @@ old camera was zoomed differently. The state machine stays in `flowing` on every
 the traffic levels there are only indicative. Clips recorded by v2 carry their own ROIs in
 `clip.json`, so `eval` on those is the real benchmark.
 
+**On one clip, in the panel:** open a clip and press **Replay with detectors**. The Pi runs
+the clip through the same `Pipeline` in the background (every detector on every frame, the
+stages off, nothing published) and saves the trace next to the clip (`<id>.trace`,
+deleted with it; `wth_edge/trace.py`). The player then draws what the detectors read over
+the video in step with it: the boxes, the leaf lines and angles, the barrier arms swinging
+with their angle and colour share, each lane's level, flow and fill, the cars (white
+moving, orange stopped) and boats, and the phase. Under the video a timeline has a strip
+per signal and a tick per event; click or drag it to jump. A 10-minute clip takes a few
+minutes. One clip at a time.
+
 ### Self-tuning
 
 The **Self-tune** switch on the panel runs the loop `wth_edge/tune/` implements: record,
