@@ -11,6 +11,9 @@ Phases, from the design doc "Bridge opening state machine":
 * ``gates_down``: both directions at a standstill with the deck clear. Stopped traffic
   starts the clock; a boat (camera or AIS) or the leaves confirm it. Without either for
   ``false_alarm_s`` it was an accident or a light, and we go back to ``flowing``.
+  Where the barrier arms are visible (``gate_*`` boxes) they decide it: arms down with the
+  deck clear is gates_down within seconds, and stays so until a lift or the arms go up;
+  arms up means no opening, whatever the traffic or a leaf box reads.
 * ``lifting`` / ``lowering``: a leaf is moving. The leaves lift one at a time (far leaf
   first), so the phase follows the highest leaf for "moving" and needs all visible leaves
   up for ``raised``. A boat often passes while the near leaf is still rising, so
@@ -56,6 +59,8 @@ class Signals:
     southbound_moving: bool | None = None
     deck_clear: bool | None = None
     deck_moving: bool | None = None
+    # The barrier arms together: "up" (traffic may pass), "down", or None (not seen).
+    gates: str | None = None
     # Per visible leaf: angle in degrees, degrees per second, and the leaf tracker's own
     # position (closed / opening / open / closing), which already has a hold time.
     leaf_angles: dict[str, float] = field(default_factory=dict)
@@ -166,6 +171,7 @@ class OpeningMachine:
         deck_ok = s.deck_clear is None or s.deck_clear
         either_moving = bool(s.northbound_moving) or bool(s.southbound_moving) or bool(s.deck_moving)
         boat = s.boat_present or s.ais_eta_s is not None
+        gates_up, gates_down = s.gates == "up", s.gates == "down"
         flowing = [lv not in ("standstill", "unknown") and bool(mv)
                    for lv, mv in ((s.northbound, s.northbound_moving), (s.southbound, s.southbound_moving))]
 
@@ -176,6 +182,12 @@ class OpeningMachine:
             return "flowing", cfg.release_hold_s
         if self.phase not in ("lifting", "raised", "lowering") and any(flowing):
             leaves = None
+        # The arms stand up only while traffic may cross, so with the arms up a leaf reading
+        # is a pole or a lamp, not an opening; and the arms going up ends one.
+        if gates_up:
+            if self.phase in ("lifting", "raised", "lowering"):
+                return "releasing", cfg.release_hold_s
+            leaves = None
 
         if leaves == "moving_up":
             return "lifting", self.bridge_cfg.hold_s
@@ -185,7 +197,11 @@ class OpeningMachine:
             if leaves == "mid" or leaves == "up":
                 # Leaves already up when we started looking, or a lift we missed.
                 return ("raised" if leaves == "up" else "lifting"), cfg.raised_hold_s
-            if both_still and deck_ok and self.phase != "releasing":
+            if gates_down and deck_ok and self.phase != "releasing":
+                # Arms down and nothing on the span: an opening is coming.
+                return "gates_down", cfg.gates_seen_hold_s if both_still else cfg.gates_down_hold_s
+            if both_still and deck_ok and not gates_up and self.phase != "releasing":
+                # Stopped traffic with the arms up is a jam or a light, not an opening.
                 return "gates_down", cfg.gates_down_hold_s
             if self.phase == "releasing":
                 if either_moving:
@@ -199,9 +215,13 @@ class OpeningMachine:
                 return "raised", cfg.raised_hold_s
             if leaves == "mid":
                 return "lifting", self.bridge_cfg.hold_s
-            if self.since is not None and t - self.since >= cfg.false_alarm_s and not boat and not self._boat_seen_in_opening:
+            if gates_up:
+                # The arms went back up without a lift.
+                return "flowing", cfg.release_hold_s
+            if (self.since is not None and t - self.since >= cfg.false_alarm_s and not boat
+                    and not self._boat_seen_in_opening and not gates_down):
                 return "flowing", 0.0
-            if either_moving and not boat and leaves in (None, "flat"):
+            if either_moving and not boat and not gates_down and leaves in (None, "flat"):
                 # Traffic moving again with nothing else seen: the stop was not for a boat.
                 return "flowing", cfg.release_hold_s
             return "gates_down", 0.0
@@ -282,7 +302,9 @@ class OpeningMachine:
         if self.phase == "gates_down":
             # Stopped traffic alone is "likely"; a boat makes it "high", unless the only
             # approach we could have seen it on is a blind side.
-            if self._boat_seen_in_opening or s.ais_eta_s is not None:
+            if s.gates == "down" and (self._boat_seen_in_opening or s.ais_eta_s is not None):
+                return 0.9
+            if s.gates == "down" or self._boat_seen_in_opening or s.ais_eta_s is not None:
                 return 0.8
             return 0.6
         if self.phase in ("lifting", "raised", "lowering"):
