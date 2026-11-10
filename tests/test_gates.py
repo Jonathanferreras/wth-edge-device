@@ -95,6 +95,30 @@ def test_gate_tracker_follows_the_arm_down_and_up():
     assert 20 < changes[1][0] <= 24
 
 
+def test_headlights_at_night_dont_read_as_down():
+    """Night of Nov 10: headlights lit a box for a second or two; the arm stayed invisible,
+    and those few "down" readings were the only ones that could tell."""
+    cfg = cfgmod.GateDetectorSection()
+    night = arm(90, light=0.15)
+    lit = night.copy()
+    x1, y1, x2, y2 = ROI.to_pixels(1280, 720)
+    lit[y1:y2, x1 - 40:x2 + 40] = 95  # glare over the box and around it
+    assert measure_gate(lit, ROI, cfg).dark  # the frame as a whole is still dark
+    # Even if such readings got through, a few of them don't move the tracker, and an arm
+    # never seen up can't go down.
+    from wth_edge.detectors.gate import GateReading
+
+    tr = GateTracker(cfg)
+    for i in range(300):
+        glare = 100 <= i < 107
+        tr.update(i * 0.2, GateReading(0.0, not glare, 0.1))
+    assert tr.position == "unknown"
+    tr = GateTracker(cfg)
+    for i in range(100):
+        tr.update(i * 0.2, GateReading(0.0, False, 0.1))
+    assert tr.position == "unknown"
+
+
 def test_gate_tracker_unknown_in_the_dark():
     cfg = cfgmod.GateDetectorSection()
     tr = GateTracker(cfg)

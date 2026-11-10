@@ -77,7 +77,9 @@ Profiles today:
   (`[gate_detector]` hue, saturation and value bounds): 0.7 or more is `up`, 0.3 or less
   is `down` (only the housing is left at the bottom). Low sun turns the arms pink, out of
   the colour range, so a second cue counts too: the arm as a stripe brighter than its
-  surroundings. Either cue says `up`; `down` needs both. Edges were tried first and failed:
+  surroundings. Either cue says `up`; `down` needs both, and only after the arm was seen
+  up. A dark box or a dark frame is `unknown` (headlights light a box at night without
+  showing the arm). Edges were tried first and failed:
   with the arm gone, the trees behind the box gave long vertical lines. A dark box is
   `unknown`. For the overlay, each arm's angle is the direction from its base (the bottom
   middle of the box) with the most arm pixels, scanned only on the side the arm swings to

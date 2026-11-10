@@ -211,6 +211,9 @@ class GateDetectorSection:
     # A box darker than this (mean grey 0-255) can't show the arm: "unknown". Night boxes
     # measure 11-59 on this camera.
     dark_below: float = 75.0
+    # ...and so does a dark frame as a whole (night frames measure 15-26, dusk 135,
+    # midday 150), so headlights sweeping a box at night don't count.
+    frame_dark_below: float = 60.0
     # Majority of the readings over this window; a change must hold for hold_s.
     smooth_s: float = 3.0
     hold_s: float = 2.0

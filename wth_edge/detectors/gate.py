@@ -66,7 +66,9 @@ def measure_gate(frame: np.ndarray, roi, cfg, side: str | None = None) -> GateRe
     if x2 - x1 < 2 or y2 - y1 < 4:
         return None
     crop = frame[y1:y2, x1:x2]
-    dark = float(crop.mean()) < cfg.dark_below
+    # Dark by the box, or by the whole frame: at night a car's headlights light a box for a
+    # second without showing the arm, but they can't lift the whole frame.
+    dark = float(crop.mean()) < cfg.dark_below or float(frame[::8, ::8].mean()) < cfg.frame_dark_below
     rows = arm_mask(crop, cfg).any(axis=1)
     reading = GateReading(float(rows.mean()), dark, _contrast(frame, x1, y1, x2, y2, cfg))
     if not dark:
@@ -128,7 +130,11 @@ def _swing(frame: np.ndarray, px: float, py: float, length: float, cfg, reading:
 
 
 class GateTracker:
-    """Majority of the up/down readings over ``smooth_s``, held ``hold_s`` before it changes."""
+    """Majority of the up/down readings over ``smooth_s``, held ``hold_s`` before it changes.
+
+    Two guards against a few stray readings: the readings that say up or down must be at
+    least half of the window, and an arm only goes down after it was seen up (it can't
+    vanish without swinging; at night it is never seen up, so it never reads down)."""
 
     def __init__(self, cfg) -> None:
         self.cfg = cfg
@@ -146,6 +152,7 @@ class GateTracker:
         self.length = 0.0
         self.aspect = 16 / 9
         self._t: float | None = None
+        self._was_up = False
 
     def update(self, t: float, reading: GateReading | None) -> str | None:
         """Feed one reading. Returns the new position when it changes."""
@@ -170,9 +177,11 @@ class GateTracker:
         else:
             ups = sum(1 for _, r in self._seen if r == "up")
             downs = sum(1 for _, r in self._seen if r == "down")
-            if not ups and not downs:
-                return None  # a short gap: keep what we had
+            if 2 * (ups + downs) < len(self._seen):
+                return None  # too few readings that can tell: keep what we had
             target = "up" if ups >= downs else "down"
+            if target == "down" and not self._was_up:
+                return None
         if target == self.position:
             self._candidate = None
             return None
@@ -180,6 +189,7 @@ class GateTracker:
             self._candidate, self._candidate_since = target, t
         if target == "unknown" or self.since is None or t - self._candidate_since >= cfg.hold_s:
             self.position, self.since, self._candidate = target, t, None
+            self._was_up = target == "up" or (target == "down" and self._was_up)
             return target
         return None
 
