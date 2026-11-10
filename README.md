@@ -72,6 +72,12 @@ Profiles today:
   0° flat to 90° upright. A 3 s median and a 2 s hold turn it into `closed` / `opening` /
   `open` / `closing` / `unknown` per leaf. The leaves lift one at a time, far leaf first,
   so the far box is the earlier signal. Both read the full-resolution greyscale frame.
+- **Barrier arms** (`gate_1` … `gate_4`, one box drawn around each raised arm): a long
+  near-vertical edge in the contrast-stretched box means the arm is up. A lowered arm lies
+  across the road and leaves its narrow box, so an arm counts as `down` once it has been
+  missing for 8 s from a box where it is usually seen (at least half the seconds of the
+  last 2 minutes), and `unknown` when the box is dark or the arm is rarely seen there.
+  Measured in every stage. More arms down than up means the gates are down.
 - **Traffic** (`northbound`, `southbound`, `deck`): two cheap measures on the preview
   frame per box. *Flow* is how much of the box changed since the last frame (cars moving);
   *fill* is how much differs from a slowly learned background (cars present, moving or
@@ -146,6 +152,11 @@ flowing -> gates_down -> lifting -> raised -> lowering -> releasing -> flowing
   neither for 3 minutes, or traffic moving again, it was an accident or a light and the
   phase goes back to `flowing`. A boat on its own never starts an opening: most boats in
   the old dataset pass under the closed bridge.
+  The barrier arms, where they can be read, decide it: arms down with the deck clear is
+  `gates_down` within 3 s (20 s if traffic isn't yet at a standstill) and stays until a
+  lift or the arms go up. Arms up means traffic may pass: no `gates_down` for stopped
+  traffic, no opening from a leaf reading (a lamp post in a leaf box at night), and an
+  opening in progress goes to `releasing`.
 - `lifting` / `lowering` follow the leaf trackers; `raised` needs every visible leaf up and
   steady. A tug often passes while the near leaf is still rising, so `lifting` straight to
   `lowering` is normal.
@@ -326,7 +337,8 @@ below 20%, the oldest clips that aren't kept are deleted. Settings live in `[rec
 
 **Adjust boxes** in the live view lets you drag every box (move or resize from a corner)
 and saves them to `rois.toml` on the Pi. The boxes are `bridge` (near leaf), `far_leaf`,
-`boat`, `northbound` and `southbound` (the approach lanes up to their gates), and `deck`.
+`boat`, `northbound` and `southbound` (the approach lanes up to their gates), `deck`, and
+`gate_1` … `gate_4` (the barrier arms; draw each box tight around the arm standing up).
 
 Above the feed there's a tab for every box in the site config (new boxes show up on their
 own). A box's tab shows that box zoomed in, cut from the full-resolution frame, next to the
