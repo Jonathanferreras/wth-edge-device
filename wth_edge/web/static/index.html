@@ -628,7 +628,7 @@ function roiReadings(name, s) {
   if (name === "gate" || name.startsWith("gate_")) {
     const g = s.gates || {}, arm = (g.arms || {})[name] || {}, pos = arm.position || "unknown";
     return [["Barrier arm", pos, pos === "up" ? "ok" : pos === "down" ? "warn" : "lv-unknown",
-      !det ? "detectors off" : pos === "unknown" ? (arm.dark ? "too dark to see the arm" : "can't see the arm") : `seen ${Math.round((arm.trust || 0) * 100)}% of the time · all arms: ${g.summary || "unknown"}`]];
+      !det ? "detectors off" : pos === "unknown" ? (arm.dark ? "too dark to see the arm" : "can't tell") : `${arm.angle_deg != null ? arm.angle_deg + "° · " : ""}${Math.round((arm.share || 0) * 100)}% arm colour · all arms: ${g.summary || "unknown"}`]];
   }
   if (name.startsWith("boat")) {
     const bt = s.boat || {};

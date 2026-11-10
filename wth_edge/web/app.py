@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import math
 import os
 import secrets
 import time
@@ -108,6 +109,15 @@ def encode_roi_jpeg(frame, roi: Roi, quality: int, det: dict | None = None) -> b
     return buf.getvalue()
 
 
+def arm_box(line, W: int, H: int, half_width_px: float = 6.0) -> list[tuple[float, float]]:
+    """The corners of a thin box around a barrier arm's line (frame fractions), in pixels."""
+    x1, y1, x2, y2 = line[0] * W, line[1] * H, line[2] * W, line[3] * H
+    dx, dy = x2 - x1, y2 - y1
+    n = math.hypot(dx, dy) or 1.0
+    ox, oy = -dy / n * half_width_px, dx / n * half_width_px
+    return [(x1 + ox, y1 + oy), (x2 + ox, y2 + oy), (x2 - ox, y2 - oy), (x1 - ox, y1 - oy)]
+
+
 def encode_jpeg(image, quality: int, rois: dict | None = None, det: dict | None = None,
                 only: str | None = None, boxes: bool = True) -> bytes:
     """JPEG of a frame; with ``rois`` and ``boxes`` draws the ROIs (just ``only`` when given),
@@ -135,7 +145,14 @@ def encode_jpeg(image, quality: int, rois: dict | None = None, det: dict | None 
                     box = rois[name].to_pixels(W, H)
                     d.text((box[0] + 4, box[3] - 12), f"{lane['level']} {lane.get('flow') or 0:.3f}", fill=DETECT_COLOUR)
             for name, arm in ((det.get("gates") or {}).get("arms") or {}).items():
-                if rois and name in rois and arm.get("position") not in (None, "unknown"):
+                if arm.get("position") in (None, "unknown"):
+                    continue
+                if line := arm.get("line"):
+                    # A box that follows the arm: a thin rectangle from its base to its tip.
+                    poly = arm_box(line, W, H)
+                    d.polygon(poly, outline=DETECT_COLOUR, width=2)
+                    d.text((line[2] * W + 3, line[3] * H - 12), f"{arm['position']} {arm.get('angle_deg', '')}°", fill=DETECT_COLOUR)
+                elif rois and name in rois:
                     box = rois[name].to_pixels(W, H)
                     d.text((box[0], box[3] + 2), arm["position"], fill=DETECT_COLOUR)
             if (opening := det.get("opening")) and opening.get("phase"):
