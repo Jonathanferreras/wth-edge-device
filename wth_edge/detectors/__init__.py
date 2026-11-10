@@ -123,7 +123,7 @@ class Pipeline:
             for name in gate_rois(rois):
                 tracker = self.gates.setdefault(name, GateTracker(gcfg))
                 before = tracker.position
-                src = hires.grey() if hires is not None else frame
+                src = hires.rgb() if hires is not None else frame  # the arms are found by colour
                 changed = tracker.update(t, measure_gate(src, rois[name], gcfg))
                 if changed:
                     events.append({"type": "gate", "at": t, "gate": name, "position": changed, "previous": before})
@@ -213,7 +213,7 @@ class Pipeline:
         """"up", "down" or None (no gate box, or none readable)."""
         from .gate import summary
 
-        return summary([tr.position for name, tr in self.gates.items() if name in self.rois])
+        return summary([(tr.position, tr.confidence) for name, tr in self.gates.items() if name in self.rois])
 
     def signals(self, ais: dict[str, Any] | None = None):
         """What the state machine sees, built from the trackers."""

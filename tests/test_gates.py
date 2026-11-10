@@ -9,7 +9,6 @@ from test_opening import flowing, machine, run, stopped
 
 from wth_edge import config as cfgmod
 from wth_edge.detectors.gate import (
-    GateReading,
     GateTracker,
     measure_gate,
     summary,
@@ -18,71 +17,86 @@ from wth_edge.detectors.stages import StageInputs, StageMachine
 from wth_edge.opening import Signals
 
 ROI = cfgmod.Roi(x=0.40, y=0.30, w=0.03, h=0.30)
+ORANGE, TREES = (230, 160, 40), (150, 90, 120)  # the arm, and the pink NoIR trees behind it
 
 
-def arm(up: bool | None, w=1280, h=720) -> np.ndarray:
-    """A grey scene with a striped barrier arm standing up in ROI, or lying across it."""
-    img = np.full((h, w), 90, np.uint8)
+def arm(angle: float | None, w=1280, h=720, light=1.0) -> np.ndarray:
+    """An RGB scene with trees behind, a post, and an orange arm at ``angle`` (90 = up,
+    None = no arm) pivoting on the bottom middle of ROI."""
+    img = np.zeros((h, w, 3), np.uint8)
+    img[:] = TREES
+    rng = np.random.default_rng(0)
+    for _ in range(60):  # tree trunks: vertical edges that fooled the edge detector
+        x = int(rng.integers(0, w))
+        cv2.line(img, (x, 0), (x, h), (60, 40, 50), 2)
     x1, y1, x2, y2 = ROI.to_pixels(w, h)
-    cx = (x1 + x2) // 2
-    if up:
-        cv2.line(img, (cx, y2 - 2), (cx, y1 + 2), 235, 4)
-    elif up is False:
-        cv2.line(img, (cx - 200, y2 - 12), (cx + 30, y2 - 12), 235, 4)
-        cv2.line(img, (cx, y2 - 2), (cx, y2 - 14), 235, 4)  # the post
-    return img
+    px, py, length = (x1 + x2) // 2, y2, y2 - y1
+    cv2.rectangle(img, (px - 4, py - 12), (px + 4, py + 10), ORANGE, -1)  # the housing
+    if angle is not None:
+        tip = (int(px + np.cos(np.radians(angle)) * length), int(py - np.sin(np.radians(angle)) * length))
+        cv2.line(img, (px, py), tip, ORANGE, 5)
+    return (img.astype(np.float32) * light).astype(np.uint8)
 
 
-@pytest.mark.parametrize("up,want", [(True, True), (False, False), (None, False)])
-def test_measure_gate(up, want):
-    r = measure_gate(arm(up), ROI, cfgmod.GateDetectorSection())
-    assert r.up is want and not r.dark
-
-
-def test_measure_gate_lores_and_dim():
+@pytest.mark.parametrize("angle,want", [(90, "up"), (0, "down"), (180, "down"), (None, "down")])
+def test_measure_gate(angle, want):
     cfg = cfgmod.GateDetectorSection()
-    small = cv2.resize(arm(True), (640, 360), interpolation=cv2.INTER_AREA)
-    assert measure_gate(small, ROI, cfg).up
-    dusk = (arm(True).astype(np.float32) * 0.25).astype(np.uint8)  # the contrast stretch finds it
-    r = measure_gate(dusk, ROI, cfg)
-    assert r.up and r.dark
+    r = measure_gate(arm(angle), ROI, cfg)
+    assert r.position(cfg) == want and not r.dark
 
 
-def feed(tr, t0, t1, up, dark=False, fps=2):
+@pytest.mark.parametrize("angle", [90, 60, 30, 135])
+def test_measure_gate_follows_the_swing(angle):
+    r = measure_gate(arm(angle), ROI, cfgmod.GateDetectorSection())
+    assert r.angle_deg == pytest.approx(angle, abs=5)
+
+
+def test_measure_gate_lores_dark_and_grey():
+    cfg = cfgmod.GateDetectorSection()
+    small = cv2.resize(arm(90), (640, 360), interpolation=cv2.INTER_AREA)
+    assert measure_gate(small, ROI, cfg).position(cfg) == "up"
+    night = measure_gate(arm(90, light=0.15), ROI, cfg)
+    assert night.dark and night.position(cfg) is None
+    assert measure_gate(cv2.cvtColor(arm(90), cv2.COLOR_RGB2GRAY), ROI, cfg) is None
+
+
+def feed(tr, t0, t1, angle, fps=2):
+    cfg = cfgmod.GateDetectorSection()
     out = []
+    frame = arm(angle)
     for i in range(int((t1 - t0) * fps)):
         t = t0 + i / fps
-        if (c := tr.update(t, GateReading(up(t) if callable(up) else up, dark))):
+        if (c := tr.update(t, measure_gate(frame, ROI, cfg))):
             out.append((t, c))
     return out
 
 
-def test_gate_down_when_a_well_seen_arm_goes_missing():
+def test_gate_tracker_follows_the_arm_down_and_up():
     tr = GateTracker(cfgmod.GateDetectorSection())
-    changes = feed(tr, 0, 200, True)
-    changes += feed(tr, 200, 300, False)
-    changes += feed(tr, 300, 310, True)
+    changes = feed(tr, 0, 20, 90)
+    st = tr.state()
+    assert st["angle_deg"] == 90 and st["line"][1] > st["line"][3]  # the tip is above the base
+    changes += feed(tr, 20, 40, None)
+    changes += feed(tr, 40, 50, 90)
     assert [c for _, c in changes] == ["up", "down", "up"]
-    assert changes[1][0] == pytest.approx(208, abs=1)
+    assert 20 < changes[1][0] <= 24
 
 
-def test_gate_rarely_seen_or_dark_is_unknown_not_down():
+def test_gate_tracker_unknown_in_the_dark():
     cfg = cfgmod.GateDetectorSection()
     tr = GateTracker(cfg)
-    feed(tr, 0, 200, lambda t: int(t) % 5 == 0)  # seen one second in five: not trusted
-    feed(tr, 200, 260, False)
-    assert tr.position == "unknown"
-    tr = GateTracker(cfg)
-    feed(tr, 0, 200, True)
-    feed(tr, 200, 260, False, dark=True)
+    night = measure_gate(arm(90, light=0.15), ROI, cfg)
+    for t in range(30):
+        tr.update(float(t), night)
     assert tr.position == "unknown"
 
 
 def test_summary():
-    assert summary([]) is None and summary(["unknown"]) is None
-    assert summary(["up", "up", "down", "unknown"]) == "up"
-    assert summary(["unknown", "down", "down", "up"]) == "down"
-    assert summary(["up", "down"]) is None
+    assert summary([]) is None and summary([("unknown", 0.0)]) is None
+    assert summary([("up", 1.0), ("up", 0.9), ("down", 1.0), ("unknown", 0.0)]) == "up"
+    assert summary([("unknown", 0), ("down", 1.0), ("down", 1.0), ("up", 0.6)]) == "down"
+    assert summary([("up", 0.5), ("down", 1.0)]) == "down"  # the steadier arm wins
+    assert summary([("up", 1.0), ("down", 1.0)]) is None
 
 
 def gated(s: Signals, gates: str | None) -> Signals:
@@ -152,7 +166,7 @@ def test_pipeline_reads_gate_boxes(tmp_path):
     p = Pipeline(cfg, rois)
     events = []
     for t in range(3):
-        events += p.process(float(t), np.dstack([arm(True)] * 3))
+        events += p.process(float(t), arm(90))
     assert any(e["type"] == "gate" and e["position"] == "up" for e in events)
     st = p.state()["gates"]
     assert st["summary"] == "up" and st["arms"]["gate_1"]["position"] == "up"

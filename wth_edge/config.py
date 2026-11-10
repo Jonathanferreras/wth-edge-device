@@ -183,31 +183,35 @@ class BridgeDetectorSection:
 class GateDetectorSection:
     """The barrier arms at the ends of the span, one box per arm (``gate_*`` ROIs).
 
-    An arm standing up (about 90 degrees) lets traffic through; the arms come down before
-    the bridge opens. Each box is drawn around a raised arm, so a long near-vertical line in
-    it means "up". A lowered arm lies across the road, out of its narrow box, so "down" is
-    the arm going missing from a box where it is normally seen. A horizontal line is no
-    help: the road and the field edge give one with the arm up. Pixel parameters are for a
-    1280-wide frame and scale with it.
+    An arm standing up lets traffic through; the arms come down before the bridge opens.
+    Each box is drawn around a raised arm. The arms are yellow-orange, so the reading is the
+    share of the box's rows with arm-coloured pixels: most rows with the arm up, only the
+    housing at the bottom with it down. (Edges don't work: with the arm gone the trees
+    behind give long vertical lines.) Colour needs daylight; a dark box reads "unknown".
+    Hue is OpenCV's 0-180 scale.
     """
 
     enabled: bool = True
-    canny_low: int = 40
-    canny_high: int = 150
-    hough_threshold: int = 15
-    max_line_gap_px: int = 4
-    # "up": a line at least this steep, at least this share of the box height.
-    up_min_deg: float = 70.0
-    up_min_frac: float = 0.45
-    # A box darker than this (mean grey 0-255) can't show a missing arm: "unknown", not "down".
+    hue_min: int = 5
+    hue_max: int = 35
+    sat_min: int = 70
+    val_min: int = 110
+    # Share of the box's rows with arm pixels: "up" at or above, "down" at or below,
+    # in between not counted.
+    up_min: float = 0.7
+    down_max: float = 0.3
+    # A box darker than this (mean grey 0-255) can't show the colour: "unknown".
     dark_below: float = 40.0
-    # The arm counts as up while it was seen this recently...
-    up_window_s: float = 5.0
-    # ...and down once it has been missing this long, from a box where it is usually seen:
-    # at least trust_min of the seconds over the last trust_s.
-    down_after_s: float = 8.0
-    trust_s: float = 120.0
-    trust_min: float = 0.5
+    # Majority of the readings over this window; a change must hold for hold_s.
+    smooth_s: float = 3.0
+    hold_s: float = 2.0
+    # No reading for this long -> "unknown".
+    lost_s: float = 10.0
+    # The arm's angle for the overlay (90 up, 0 or 180 down): the direction from the arm's
+    # base (bottom middle of its box) with the most arm pixels along it, in steps of this.
+    swing_step_deg: float = 5.0
+    # ...counted only when at least this share of the points along that direction is arm.
+    swing_min_share: float = 0.5
 
 
 @dataclass

@@ -72,12 +72,15 @@ Profiles today:
   0° flat to 90° upright. A 3 s median and a 2 s hold turn it into `closed` / `opening` /
   `open` / `closing` / `unknown` per leaf. The leaves lift one at a time, far leaf first,
   so the far box is the earlier signal. Both read the full-resolution greyscale frame.
-- **Barrier arms** (`gate_1` … `gate_4`, one box drawn around each raised arm): a long
-  near-vertical edge in the contrast-stretched box means the arm is up. A lowered arm lies
-  across the road and leaves its narrow box, so an arm counts as `down` once it has been
-  missing for 8 s from a box where it is usually seen (at least half the seconds of the
-  last 2 minutes), and `unknown` when the box is dark or the arm is rarely seen there.
-  Measured in every stage. More arms down than up means the gates are down.
+- **Barrier arms** (`gate_1` … `gate_4`, one box drawn around each raised arm): the arms
+  are yellow-orange, so each box reads the share of its rows holding arm-coloured pixels
+  (`[gate_detector]` hue, saturation and value bounds): 0.7 or more is `up`, 0.3 or less
+  is `down` (only the housing is left at the bottom). Edges were tried first and failed:
+  with the arm gone, the trees behind the box gave long vertical lines. A dark box is
+  `unknown`. For the overlay, each arm's angle is the direction from its base (the bottom
+  middle of the box) with the most arm pixels, and the panel draws a box along it that
+  swings with the arm. The arms are combined by a vote weighted by how steady each arm
+  reads. Measured in every stage.
 - **Traffic** (`northbound`, `southbound`, `deck`): two cheap measures on the preview
   frame per box. *Flow* is how much of the box changed since the last frame (cars moving);
   *fill* is how much differs from a slowly learned background (cars present, moving or
