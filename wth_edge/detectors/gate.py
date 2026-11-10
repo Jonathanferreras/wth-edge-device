@@ -53,8 +53,9 @@ def arm_mask(rgb: np.ndarray, cfg) -> np.ndarray:
     return cv2.inRange(hsv, lo, hi) > 0
 
 
-def measure_gate(frame: np.ndarray, roi, cfg) -> GateReading | None:
-    """``frame``: RGB. None when the box is off the frame or the frame has no colour."""
+def measure_gate(frame: np.ndarray, roi, cfg, side: str | None = None) -> GateReading | None:
+    """``frame``: RGB. None when the box is off the frame or the frame has no colour.
+    ``side``: which way the arm swings down on screen ("left" / "right"), if known."""
     if frame.ndim != 3:
         return None
     h, w = frame.shape[:2]
@@ -66,11 +67,15 @@ def measure_gate(frame: np.ndarray, roi, cfg) -> GateReading | None:
     rows = arm_mask(crop, cfg).any(axis=1)
     reading = GateReading(float(rows.mean()), dark)
     if not dark:
-        _swing(frame, (x1 + x2) / 2, y2, y2 - y1, cfg, reading)
+        _swing(frame, (x1 + x2) / 2, y2, y2 - y1, cfg, reading, side)
     return reading
 
 
-def _swing(frame: np.ndarray, px: float, py: float, length: float, cfg, reading: GateReading) -> None:
+SWING_RANGE = {"right": (0.0, 95.0), "left": (85.0, 180.0)}
+
+
+def _swing(frame: np.ndarray, px: float, py: float, length: float, cfg, reading: GateReading,
+           side: str | None = None) -> None:
     """The arm's angle: sample points along each direction from the base, from a quarter of
     the arm's length to its end, and take the direction with the most arm pixels."""
     h, w = frame.shape[:2]
@@ -79,10 +84,13 @@ def _swing(frame: np.ndarray, px: float, py: float, length: float, cfg, reading:
     bx2, by2 = min(w, int(px) + reach + 1), min(h, int(py) + 2)
     if bx2 - bx1 < 2 or by2 - by1 < 2:
         return
-    mask = arm_mask(frame[by1:by2, bx1:bx2], cfg)
+    import cv2
+
+    mask = cv2.dilate(arm_mask(frame[by1:by2, bx1:bx2], cfg).astype(np.uint8), np.ones((3, 3), np.uint8)) > 0
+    lo, hi = SWING_RANGE.get(side or "", (0.0, 180.0))
     steps = np.linspace(0.25, 1.0, max(6, int(length * 0.75)))
     best, best_share = None, 0.0
-    for deg in np.arange(0.0, 180.0 + 1e-6, cfg.swing_step_deg):
+    for deg in np.arange(lo, hi + 1e-6, cfg.swing_step_deg):
         rad = math.radians(deg)
         xs = np.round(px + math.cos(rad) * length * steps).astype(int) - bx1
         ys = np.round(py - math.sin(rad) * length * steps).astype(int) - by1
@@ -117,11 +125,13 @@ class GateTracker:
         self.pivot: tuple[float, float] | None = None
         self.length = 0.0
         self.aspect = 16 / 9
+        self._t: float | None = None
 
     def update(self, t: float, reading: GateReading | None) -> str | None:
         """Feed one reading. Returns the new position when it changes."""
         cfg = self.cfg
         pos = reading.position(cfg) if reading is not None else None
+        self._t = t
         self._seen.append((t, pos))
         while self._seen and t - self._seen[0][0] > cfg.smooth_s:
             self._seen.popleft()
@@ -131,7 +141,7 @@ class GateTracker:
                 self.pivot, self.length, self.aspect = reading.pivot, reading.length, reading.aspect
             if reading.angle_deg is not None:
                 self._angles.append((t, reading.angle_deg))
-        while self._angles and t - self._angles[0][0] > cfg.smooth_s:
+        while self._angles and t - self._angles[0][0] > cfg.angle_smooth_s:
             self._angles.popleft()
         if pos is not None:
             self._last_found = t
@@ -169,6 +179,9 @@ class GateTracker:
         aspect = self.aspect
         angle = self.angle
         if angle is None or self.pivot is None or self.position == "unknown":
+            return None
+        if (self.position == "down" and self.since is not None and self._t is not None
+                and self._t - self.since > self.cfg.down_line_s):
             return None
         px, py = self.pivot
         rad = math.radians(angle)

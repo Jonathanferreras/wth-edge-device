@@ -171,3 +171,20 @@ def test_pipeline_reads_gate_boxes(tmp_path):
     st = p.state()["gates"]
     assert st["summary"] == "up" and st["arms"]["gate_1"]["position"] == "up"
     assert p.signals().gates == "up"
+
+
+def test_swing_side_ignores_a_neighbour_on_the_other_side():
+    cfg = cfgmod.GateDetectorSection()
+    frame = arm(150)  # the arm leans left...
+    assert measure_gate(frame, ROI, cfg).angle_deg == pytest.approx(150, abs=5)
+    assert measure_gate(frame, ROI, cfg, side="right").angle_deg is None  # ...but this arm swings right
+
+
+def test_lowered_arm_stops_being_drawn():
+    cfg = cfgmod.GateDetectorSection()
+    tr = GateTracker(cfg)
+    feed(tr, 0, 10, 90)
+    feed(tr, 10, 14, 10)
+    assert tr.position == "down" and tr.state()["line"] is not None
+    feed(tr, 14, 30, 10)
+    assert tr.state()["line"] is None

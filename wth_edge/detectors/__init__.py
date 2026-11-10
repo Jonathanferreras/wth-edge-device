@@ -124,7 +124,8 @@ class Pipeline:
                 tracker = self.gates.setdefault(name, GateTracker(gcfg))
                 before = tracker.position
                 src = hires.rgb() if hires is not None else frame  # the arms are found by colour
-                changed = tracker.update(t, measure_gate(src, rois[name], gcfg))
+                side = self.config.site.gate_swing.get(name)
+                changed = tracker.update(t, measure_gate(src, rois[name], gcfg, side))
                 if changed:
                     events.append({"type": "gate", "at": t, "gate": name, "position": changed, "previous": before})
         for name, watcher in self.watchers.items():

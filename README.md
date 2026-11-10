@@ -78,8 +78,9 @@ Profiles today:
   is `down` (only the housing is left at the bottom). Edges were tried first and failed:
   with the arm gone, the trees behind the box gave long vertical lines. A dark box is
   `unknown`. For the overlay, each arm's angle is the direction from its base (the bottom
-  middle of the box) with the most arm pixels, and the panel draws a box along it that
-  swings with the arm. The arms are combined by a vote weighted by how steady each arm
+  middle of the box) with the most arm pixels, scanned only on the side the arm swings to
+  (`[site] gate_swing`), and the panel draws a box along it that swings with the arm. It
+  stops drawing an arm a few seconds after it is down, when the angle can't be read. The arms are combined by a vote weighted by how steady each arm
   reads. Measured in every stage.
 - **Traffic** (`northbound`, `southbound`, `deck`): two cheap measures on the preview
   frame per box. *Flow* is how much of the box changed since the last frame (cars moving);
