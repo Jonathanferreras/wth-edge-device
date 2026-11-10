@@ -169,6 +169,16 @@
   dialog video { width: 100%; display: block; border-radius: var(--r-sm); background: #000; }
   dialog::backdrop { background: rgba(0, 0, 0, .7); }
   dialog .toolbar { margin-top: 12px; }
+  /* ---------- clip player: the detectors replayed over the video */
+  .vwrap { position: relative; }
+  .vwrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  .tracebar { margin-top: 10px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; color: var(--quiet); }
+  .tracebar progress { width: 160px; accent-color: var(--accent); }
+  .tracebar label { display: inline-flex; gap: 6px; align-items: center; color: var(--ink); }
+  #timeline { width: 100%; display: block; margin-top: 10px; cursor: pointer; touch-action: none; }
+  .readout { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 14px; margin-top: 10px; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .readout div { display: flex; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--line); padding: 2px 0; }
+  .readout span:first-child { color: var(--quiet); }
 
 
   /* ---------- self-tune */
@@ -393,7 +403,19 @@
   </div>
 </main>
 <dialog id="framedlg"><div class="pair" id="framepair"></div><div class="toolbar"><span id="frametitle"></span><button class="btn" id="closeframe" style="margin-left:auto">Close</button></div></dialog>
-<dialog id="player"><video id="video" controls playsinline></video><div class="toolbar"><span id="playtitle"></span><button class="btn" id="closeplayer" style="margin-left:auto">Close</button></div></dialog>
+<dialog id="player" aria-labelledby="playtitle">
+  <div class="vwrap"><video id="video" controls playsinline></video><canvas id="overlay" aria-hidden="true"></canvas></div>
+  <div class="tracebar">
+    <button class="btn" id="tracebtn">Replay with detectors</button>
+    <label id="traceshow" hidden><input type="checkbox" id="tracetoggle" checked> Show on video</label>
+    <progress id="traceprog" max="1" value="0" hidden></progress>
+    <span id="tracenote" role="status">See what each detector read on every frame: boxes, leaf lines, barrier arms, cars, boats.</span>
+  </div>
+  <canvas id="timeline" height="10" role="img" aria-label="Detector timeline; click to jump to a moment" hidden></canvas>
+  <div class="tracebar" id="tracelegend" hidden>Green: flowing, up, light, clear · Yellow/orange: moving, moderate, gates coming down · Red: stopped, down, heavy, raised · Grey: can't tell · Ticks: events</div>
+  <div class="readout" id="readout" aria-live="off" hidden></div>
+  <div class="toolbar"><span id="playtitle"></span><button class="btn" id="closeplayer" style="margin-left:auto">Close</button></div>
+</dialog>
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
@@ -735,6 +757,7 @@ $("clips").addEventListener("click", async (e) => {
     $("video").src = `clips/${encodeURIComponent(id)}.mp4`;
     $("playtitle").textContent = id;
     $("player").showModal();
+    openTrace(id);
   } else if (act === "keep") {
     await api(`api/clips/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ keep: !card.classList.contains("kept") }) });
     loadClips();
@@ -746,7 +769,203 @@ $("clips").addEventListener("click", async (e) => {
   }
 });
 $("closeplayer").addEventListener("click", () => $("player").close());
-$("player").addEventListener("close", () => { $("video").pause(); $("video").removeAttribute("src"); $("video").load(); });
+$("player").addEventListener("close", () => { $("video").pause(); $("video").removeAttribute("src"); $("video").load(); closeTrace(); });
+
+// ---------------- clip replay: the detectors' reading of every frame, drawn over the video
+let trace = null, traceClip = null, tracePoll = null, traceRaf = null, traceIdx = -1;
+const TR_DETECT = "#ef4444", TR_MOVING = "#f5f5f7", TR_STILL = "#ff9f0a";
+// Colour per reading, for the timeline strips: calm, attention, stop, not known.
+const TONE = {
+  flowing: "#34c759", closed: "#34c759", up: "#34c759", light: "#34c759", clear: "#34c759", traffic: "#3a3a3e", none: "#2c2c2e",
+  moderate: "#ffcc00", gates_down: "#ff9f0a", opening: "#ffcc00", closing: "#ffcc00", lifting: "#ffcc00", lowering: "#ffcc00",
+  releasing: "#5e9eff", watch: "#5e9eff", track: "#bf5af2", busy: "#ff9f0a", boat: "#5e9eff",
+  heavy: "#ff453a", standstill: "#ff453a", raised: "#ff453a", open: "#ff453a", down: "#ff453a",
+};
+const toneOf = (v) => v == null || v === "unknown" ? "#48484a" : TONE[v] || "#8e8e93";
+function traceRows(tr) {
+  // A strip for each signal the clip has a box for.
+  const f0 = tr.frames[0] || {}, has = (n) => n in tr.rois;
+  const rows = [["Phase", (f) => f.phase]];
+  const gates = Object.keys(f0.gates || {});
+  if (gates.length) rows.push(["Barriers", (f) => f.gate_summary]);
+  for (const g of gates) rows.push([fmt.name(g), (f) => f.gates?.[g]?.pos]);
+  if (has("bridge")) rows.push(["Near leaf", (f) => f.bridge?.pos]);
+  if (has("far_leaf")) rows.push(["Far leaf", (f) => f.far_leaf?.pos]);
+  for (const l of Object.keys(f0.traffic || {})) if (has(l)) rows.push([fmt.name(l), (f) => f.traffic?.[l]?.lv]);
+  if (has("deck")) rows.push(["Deck", (f) => f.deck?.clear == null ? null : f.deck.clear ? "clear" : "busy"]);
+  if (has("boat") || has("boat_near")) rows.push(["Boat", (f) => f.boat?.present ? "boat" : "none"]);
+  return rows;
+}
+const TL = { label: 86, row: 14, gap: 3, top: 4 };
+function drawTimeline() {
+  const c = $("timeline"), v = $("video");
+  if (!trace) return;
+  const rows = traceRows(trace), dpr = window.devicePixelRatio || 1;
+  const W = c.clientWidth, H = TL.top + rows.length * (TL.row + TL.gap) + 14;
+  if (c.width !== Math.round(W * dpr) || c.height !== Math.round(H * dpr)) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); c.style.height = `${H}px`; }
+  const g = c.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, W, H);
+  const dur = Math.max(v.duration || 0, trace.seconds || 0, 0.1), x0 = TL.label, span = W - x0 - 4;
+  const X = (t) => x0 + t / dur * span;
+  g.font = "11px -apple-system, system-ui, sans-serif"; g.textBaseline = "middle";
+  rows.forEach(([name, get], i) => {
+    const y = TL.top + i * (TL.row + TL.gap);
+    g.fillStyle = "#9a9aa0"; g.fillText(name, 0, y + TL.row / 2);
+    let start = 0, val = get(trace.frames[0] || {});
+    const flush = (end) => { g.fillStyle = toneOf(val); g.fillRect(X(start), y, Math.max(1, X(end) - X(start)), TL.row); };
+    for (const f of trace.frames) { const nv = get(f); if (nv !== val) { flush(f.t); start = f.t; val = nv; } }
+    flush(trace.seconds);
+  });
+  const yb = TL.top + rows.length * (TL.row + TL.gap);
+  g.fillStyle = "#f5f5f7";
+  for (const e of trace.events || []) if (["phase", "gate", "bridge", "boat_started", "boat_ended"].includes(e.type)) g.fillRect(X(e.at) - 0.5, yb, 1, 6);
+  const t = v.currentTime || 0;
+  g.fillStyle = "#5e9eff"; g.fillRect(X(t) - 1, 0, 2, H);
+}
+function frameAt(t) {
+  const fr = trace.frames;
+  let lo = 0, hi = fr.length - 1;
+  if (hi < 0) return null;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (fr[mid].t <= t + 1e-3) lo = mid; else hi = mid - 1; }
+  traceIdx = lo;
+  return fr[lo];
+}
+function drawOverlay() {
+  const c = $("overlay"), v = $("video");
+  const dpr = window.devicePixelRatio || 1, W = c.clientWidth, H = c.clientHeight;
+  if (c.width !== Math.round(W * dpr) || c.height !== Math.round(H * dpr)) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
+  const g = c.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, W, H);
+  if (!trace || !$("tracetoggle").checked) return;
+  // The video keeps its aspect inside the element: find the picture's rectangle.
+  const vw = v.videoWidth || 16, vh = v.videoHeight || 9, k = Math.min(W / vw, H / vh);
+  const pw = vw * k, ph = vh * k, ox = (W - pw) / 2, oy = (H - ph) / 2;
+  const P = (x, y) => [ox + x * pw, oy + y * ph];
+  const f = frameAt(v.currentTime || 0);
+  if (!f) return;
+  g.lineWidth = 1.5; g.font = "11px -apple-system, system-ui, sans-serif"; g.textBaseline = "top";
+  const names = Object.keys(trace.rois);
+  names.forEach((n, i) => {
+    const r = trace.rois[n], [x, y] = P(r.x, r.y);
+    g.strokeStyle = COLORS[i % COLORS.length]; g.globalAlpha = 0.8;
+    g.strokeRect(x, y, r.w * pw, r.h * ph); g.globalAlpha = 1;
+  });
+  const label = (text, x, y, colour = TR_DETECT) => {
+    g.fillStyle = "rgba(0,0,0,.6)"; const w = g.measureText(text).width + 6; g.fillRect(x, y, w, 14);
+    g.fillStyle = colour; g.fillText(text, x + 3, y + 1);
+  };
+  for (const [key, name] of [["bridge", "near"], ["far_leaf", "far"]]) {
+    const leaf = f[key];
+    if (!leaf?.line) continue;
+    const [x1, y1] = P(leaf.line[0], leaf.line[1]), [x2, y2] = P(leaf.line[2], leaf.line[3]);
+    g.strokeStyle = TR_DETECT; g.lineWidth = 3; g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke();
+    label(`${name} ${leaf.ang ?? "–"}° ${leaf.pos}`, Math.min(x1, x2), Math.min(y1, y2) - 16);
+  }
+  for (const [n, a] of Object.entries(f.gates || {})) {
+    const r = trace.rois[n];
+    if (a.line) {
+      // A thin box along the arm, swinging with it.
+      const [x1, y1] = P(a.line[0], a.line[1]), [x2, y2] = P(a.line[2], a.line[3]);
+      const len = Math.hypot(x2 - x1, y2 - y1) || 1, hw = 5, nx = -(y2 - y1) / len * hw, ny = (x2 - x1) / len * hw;
+      g.strokeStyle = TR_DETECT; g.lineWidth = 2; g.beginPath();
+      g.moveTo(x1 + nx, y1 + ny); g.lineTo(x2 + nx, y2 + ny); g.lineTo(x2 - nx, y2 - ny); g.lineTo(x1 - nx, y1 - ny); g.closePath(); g.stroke();
+    }
+    if (r) { const [x, y] = P(r.x, r.y + r.h); label(`${a.pos}${a.ang != null ? " " + a.ang + "°" : ""} ${Math.round((a.share || 0) * 100)}%`, x, y + 2, a.pos === "down" ? TR_DETECT : "#f5f5f7"); }
+  }
+  for (const [n, lane] of Object.entries(f.traffic || {})) {
+    const r = trace.rois[n];
+    if (!r || !lane.lv) continue;
+    const [x, y] = P(r.x, r.y + r.h);
+    label(`${lane.lv} flow ${(lane.flow ?? 0).toFixed(3)} fill ${(lane.fill ?? 0).toFixed(2)}`, x, y + 2, "#f5f5f7");
+  }
+  g.lineWidth = 1.5;
+  for (const [x1f, y1f, x2f, y2f, moving] of f.veh || []) {
+    const [x1, y1] = P(x1f, y1f), [x2, y2] = P(x2f, y2f);
+    g.strokeStyle = moving ? TR_MOVING : TR_STILL; g.strokeRect(x1, y1, x2 - x1, y2 - y1);
+  }
+  if (f.boat?.box) {
+    const b = f.boat.box, [x1, y1] = P(b[0], b[1]), [x2, y2] = P(b[2], b[3]);
+    g.strokeStyle = TR_DETECT; g.lineWidth = 3; g.strokeRect(x1, y1, x2 - x1, y2 - y1);
+    label(`boat ${f.boat.conf ?? ""}${f.boat.dir ? " " + f.boat.dir : ""}`, x1, y1 - 16);
+  }
+  g.font = "600 13px -apple-system, system-ui, sans-serif";
+  label(`${(f.phase || "–").replace("_", " ")} · barriers ${f.gate_summary || "unknown"} · ${f.t.toFixed(1)} s`, ox + 6, oy + 6, "#f5f5f7");
+}
+function drawReadout() {
+  const f = trace && traceIdx >= 0 ? trace.frames[traceIdx] : null;
+  if (!f) return;
+  const items = [["Time", `${f.t.toFixed(1)} s`], ["Phase", f.phase || "–"], ["Barriers", f.gate_summary || "unknown"]];
+  for (const [n, a] of Object.entries(f.gates || {})) items.push([fmt.name(n), `${a.pos}${a.ang != null ? " " + a.ang + "°" : ""} · ${Math.round((a.share || 0) * 100)}%`]);
+  for (const [k, n] of [["bridge", "Near leaf"], ["far_leaf", "Far leaf"]]) if (k in trace.rois) items.push([n, `${f[k]?.pos || "–"}${f[k]?.ang != null ? " " + f[k].ang + "°" : ""}`]);
+  for (const [n, l] of Object.entries(f.traffic || {})) if (n in trace.rois) items.push([fmt.name(n), `${l.lv} · ${(l.flow ?? 0).toFixed(3)} / ${(l.fill ?? 0).toFixed(2)}`]);
+  if (f.deck && "deck" in trace.rois) items.push(["Deck", f.deck.clear == null ? "unknown" : f.deck.clear ? "clear" : "busy"]);
+  items.push(["Cars seen", String((f.veh || []).length)], ["Boat", f.boat?.present ? `yes ${f.boat.conf ?? ""}` : "no"]);
+  $("readout").innerHTML = items.map(([k, v]) => `<div><span>${esc(k)}</span><span>${esc(v)}</span></div>`).join("");
+}
+function traceLoop() {
+  traceRaf = null;
+  if (!trace || !$("player").open) return;
+  drawOverlay(); drawTimeline(); drawReadout();
+  if (!$("video").paused) traceRaf = requestAnimationFrame(traceLoop);
+}
+const traceKick = () => { if (trace && traceRaf == null) traceRaf = requestAnimationFrame(traceLoop); };
+for (const ev of ["play", "seeked", "timeupdate", "loadedmetadata"]) $("video").addEventListener(ev, traceKick);
+window.addEventListener("resize", traceKick);
+$("tracetoggle").addEventListener("change", traceKick);
+function seekTimeline(e) {
+  if (!trace) return;
+  const c = $("timeline"), rect = c.getBoundingClientRect(), v = $("video");
+  const dur = Math.max(v.duration || 0, trace.seconds || 0, 0.1);
+  v.currentTime = clamp((e.clientX - rect.left - TL.label) / (rect.width - TL.label - 4), 0, 1) * dur;
+}
+$("timeline").addEventListener("pointerdown", (e) => { $("timeline").setPointerCapture(e.pointerId); seekTimeline(e); });
+$("timeline").addEventListener("pointermove", (e) => { if (e.buttons) seekTimeline(e); });
+function showTraceUi(state, extra = {}) {
+  const loaded = state === "loaded";
+  $("tracebtn").hidden = state === "running" || loaded;
+  $("traceprog").hidden = state !== "running";
+  $("traceshow").hidden = !loaded;
+  $("timeline").hidden = $("readout").hidden = $("tracelegend").hidden = !loaded;
+  if (state === "running") { $("traceprog").value = extra.progress || 0; $("tracenote").textContent = `Replaying through the detectors… ${Math.round((extra.progress || 0) * 100)}%`; }
+  else if (state === "error") $("tracenote").textContent = `Replay failed: ${extra.error}`;
+  else if (loaded) $("tracenote").textContent = `Every detector on every frame at ${trace.fps} fps (${trace.ms_per_frame} ms a frame on the Pi). Click the timeline to jump.`;
+  else if (extra.busy_with) $("tracenote").textContent = `Another clip is being replayed; try again when it's done.`;
+  else $("tracenote").textContent = "See what each detector read on every frame: boxes, leaf lines, barrier arms, cars, boats.";
+}
+async function loadTrace(id) {
+  try {
+    const r = await fetch(`clips/${encodeURIComponent(id)}.trace`, { cache: "no-store" });
+    if (!r.ok) throw new Error(r.status);
+    const data = await r.json();
+    if (traceClip !== id) return;
+    trace = data; traceIdx = -1;
+    showTraceUi("loaded"); traceKick();
+  } catch (err) { showTraceUi("error", { error: String(err.message || err) }); }
+}
+async function pollTrace(id) {
+  clearTimeout(tracePoll);
+  if (traceClip !== id) return;
+  let st;
+  try { st = await api(`api/clips/${encodeURIComponent(id)}/trace`); } catch { return; }
+  if (traceClip !== id) return;
+  if (st.state === "done") return loadTrace(id);
+  showTraceUi(st.state, st);
+  if (st.state === "running") tracePoll = setTimeout(() => pollTrace(id), 1500);
+}
+function openTrace(id) { closeTrace(); traceClip = id; showTraceUi("none"); pollTrace(id); }
+function closeTrace() {
+  clearTimeout(tracePoll); if (traceRaf != null) cancelAnimationFrame(traceRaf);
+  trace = null; traceClip = null; traceRaf = null; traceIdx = -1;
+  const c = $("overlay"); c.getContext("2d").clearRect(0, 0, c.width, c.height);
+}
+$("tracebtn").addEventListener("click", async () => {
+  const id = traceClip;
+  if (!id) return;
+  try { const st = await api(`api/clips/${encodeURIComponent(id)}/trace`, { method: "POST" }); showTraceUi(st.state, st); pollTrace(id); }
+  catch (err) { $("tracenote").textContent = String(err.message || err); }
+});
 
 // ---------------- AIS map
 let map = null, bridgeMarker = null, markers = {};
