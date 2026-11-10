@@ -216,7 +216,7 @@ the traffic levels there are only indicative. Clips recorded by v2 carry their o
 
 **On one clip, in the panel:** open a clip and press **Replay with detectors**. The Pi runs
 the clip through the same `Pipeline` in the background (every detector on every frame, the
-stages off, nothing published) and saves the trace next to the clip (`<id>.trace`,
+stages off, today's boxes, nothing published) and saves the trace next to the clip (`<id>.trace`,
 deleted with it; `wth_edge/trace.py`). The player then draws what the detectors read over
 the video in step with it: the boxes, the leaf lines and angles, the barrier arms swinging
 with their angle and colour share, each lane's level, flow and fill, the cars (white

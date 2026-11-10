@@ -5,9 +5,9 @@ barrier arms at their angle, the cars and boats found, each lane's flow and fill
 stage and phase, plus a timeline of every signal. It shows how the detectors read the
 clip, which the live log (one entry a second, the stage machine taking turns) can't.
 
-Same ``Pipeline`` as the device and ``wth-edge eval``, at the detector rate, on the clip's
-own ROIs, with the stages off so every detector reads every frame. Nothing it finds is
-published or recorded: no openings history, no AIS. One clip at a time, in a background
+Same ``Pipeline`` as the device and ``wth-edge eval``, at the detector rate, on today's
+boxes (plus any box only the clip has), with the stages off so every detector reads every
+frame. Nothing it finds is published or recorded: no openings history, no AIS. One clip at a time, in a background
 thread at low priority, and the result is saved next to the clip (``<id>.trace``).
 """
 
@@ -145,8 +145,11 @@ class Tracer:
 
         _lower_priority()
         try:
+            # Today's boxes (site file plus the panel's edits) over the ones the clip was
+            # recorded with: the replay shows how the detectors read it now.
             raw = meta.get("rois") or {}
-            rois = {k: config_mod.Roi(**v) for k, v in raw.items()} or dict(self.config.site.rois)
+            rois = {k: config_mod.Roi(**v) for k, v in raw.items()}
+            rois.update({k: copy.copy(v) for k, v in self.config.site.rois.items()})
 
             def progress(p: float) -> None:
                 with self._lock:
