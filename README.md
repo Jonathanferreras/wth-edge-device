@@ -75,7 +75,9 @@ Profiles today:
 - **Barrier arms** (`gate_1` … `gate_4`, one box drawn around each raised arm): the arms
   are yellow-orange, so each box reads the share of its rows holding arm-coloured pixels
   (`[gate_detector]` hue, saturation and value bounds): 0.7 or more is `up`, 0.3 or less
-  is `down` (only the housing is left at the bottom). Edges were tried first and failed:
+  is `down` (only the housing is left at the bottom). Low sun turns the arms pink, out of
+  the colour range, so a second cue counts too: the arm as a stripe brighter than its
+  surroundings. Either cue says `up`; `down` needs both. Edges were tried first and failed:
   with the arm gone, the trees behind the box gave long vertical lines. A dark box is
   `unknown`. For the overlay, each arm's angle is the direction from its base (the bottom
   middle of the box) with the most arm pixels, scanned only on the side the arm swings to
@@ -96,8 +98,10 @@ Profiles today:
   sighting feeds one crossing tracker):
   background subtraction in the boat boxes wakes YOLOv8s (`models/yolov8s.onnx`,
   COCO class `boat`, run through OpenCV, no PyTorch). The model also runs every 2 s when
-  nothing moves, because a slow tug blends into the background. Two hits start a
-  crossing; the direction locks once the boat has moved 3% of the frame width; the
+  nothing moves, because a slow tug blends into the background. A crossing is
+  announced after two hits and once the boat has moved 3% of the frame width, which also
+  gives its direction (the model scores a rock exposed at low water as a boat, but a rock
+  doesn't travel); the
   crossing ends 20 s after the last hit.
 - **AIS** (optional, `[ais] enabled = true`): vessel positions from aisstream.io for a
   1-mile box around the bridge (`site.bridge_lat` / `bridge_lon`, key in
