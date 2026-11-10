@@ -9,6 +9,8 @@
 
 [site]
 name = "default"
+# Which way each barrier arm swings down on screen (seen on 20261110T161325Z).
+gate_swing = { gate_1 = "right", gate_2 = "left", gate_3 = "right", gate_4 = "left" }
 left_is = "WEST"
 right_is = "EAST"
 # Approaches the camera can see a boat on. The west approach is mostly hidden from this window.
@@ -69,17 +71,18 @@ h = 0.18
 
 # The barrier arms, left to right, each box around the arm standing up. Up lets traffic
 # through; the arms come down before the bridge opens. Marked by hand on clip
-# 20261109T183046Z (Nov 10 2026).
+# 20261109T183046Z (Nov 10 2026); gate_1 and gate_2 tightened to the arm's column on
+# 20261110T161325Z, so sunlit grass and road stay out.
 [site.rois.gate_1]
-x = 0.014
-y = 0.561
-w = 0.023
-h = 0.166
+x = 0.010
+y = 0.590
+w = 0.022
+h = 0.102
 
 [site.rois.gate_2]
-x = 0.156
+x = 0.163
 y = 0.600
-w = 0.020
+w = 0.011
 h = 0.141
 
 [site.rois.gate_3]

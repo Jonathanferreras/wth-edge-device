@@ -192,7 +192,8 @@ class GateDetectorSection:
     """
 
     enabled: bool = True
-    hue_min: int = 5
+    # Sunlit grass sits at hue 5-7, the arms at 14-15.
+    hue_min: int = 10
     hue_max: int = 35
     sat_min: int = 70
     val_min: int = 110
@@ -210,8 +211,14 @@ class GateDetectorSection:
     # The arm's angle for the overlay (90 up, 0 or 180 down): the direction from the arm's
     # base (bottom middle of its box) with the most arm pixels along it, in steps of this.
     swing_step_deg: float = 5.0
-    # ...counted only when at least this share of the points along that direction is arm.
-    swing_min_share: float = 0.5
+    # ...counted only when at least this share of the points along that direction is arm
+    # (the mask is widened a pixel first: a swinging arm is only 1-2 px thick).
+    swing_min_share: float = 0.35
+    # The angle is the median over this window (shorter than smooth_s, so the box keeps up).
+    angle_smooth_s: float = 1.0
+    # Stop drawing an arm this long after it is down: a lowered arm lies along the road,
+    # foreshortened, and the angle then follows the railing or the kerb.
+    down_line_s: float = 4.0
 
 
 @dataclass
@@ -474,6 +481,9 @@ class SiteSection:
     bridge_lat: float = 0.0
     bridge_lon: float = 0.0
     rois: dict[str, Roi] = field(default_factory=dict)
+    # Which way each barrier arm swings down on screen ("left" or "right"), so its angle
+    # isn't taken from a neighbouring arm. Missing = either way.
+    gate_swing: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
