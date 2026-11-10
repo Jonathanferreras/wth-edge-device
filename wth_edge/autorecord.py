@@ -65,6 +65,8 @@ class AutoRecorder:
                     entry["far_leaf"] = {k: st["far_leaf"].get(k) for k in ("position", "angle_deg", "line")}
                 if st.get("traffic"):
                     entry["traffic"] = {d: {k: v.get(k) for k in ("level", "flow", "fill")} for d, v in st["traffic"].items()}
+                if (st.get("gates") or {}).get("arms"):
+                    entry["gates"] = {n: g.get("position") for n, g in st["gates"]["arms"].items()}
                 if st.get("deck"):
                     entry["deck"] = st["deck"]
                 if st.get("opening"):

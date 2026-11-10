@@ -33,6 +33,8 @@ def new_state(device_id: str, version: str) -> dict[str, Any]:
         "far_leaf": {"position": "unknown", "confidence": 0.0, "angle_deg": None, "since": None, "line": None},
         # Per direction: level (light / moderate / heavy / standstill / unknown), confidence, flow, fill.
         "traffic": {},
+        # The barrier arms: summary (up / down / None) and each arm's position.
+        "gates": None,
         "deck": None,
         "vehicles": [],
         # Where the detectors look: traffic -> watch -> track (detectors/stages.py).

@@ -38,6 +38,12 @@ LEAVES = {"bridge": "near", "far_leaf": "far"}
 # close to the camera that the main box can't cover without taking in the trees. Each gets
 # its own motion gate and model run; the best sighting of the frame feeds one tracker.
 BOAT_ROIS = ("boat", "boat_near")
+# Barrier arm boxes: any ROI named gate_*, one per arm.
+GATE_PREFIX = "gate"
+
+
+def gate_rois(rois) -> list[str]:
+    return [n for n in rois if n == GATE_PREFIX or n.startswith(GATE_PREFIX + "_")]
 
 
 def _best(sightings):
@@ -60,6 +66,7 @@ class Pipeline:
         bcfg, boat, tcfg = config.bridge_detector, config.boat_detector, config.traffic_detector
         self.bridge = BridgeTracker(bcfg) if bcfg.enabled else None
         self.far_leaf = BridgeTracker(bcfg) if bcfg.enabled else None
+        self.gates: dict = {}  # name -> GateTracker, made when a gate box first shows up
         self.lanes = {name: LaneTracker(tcfg) for name in LANES} if tcfg.enabled else {}
         self.watchers = {name: LaneWatcher(tcfg) for name in (*LANES, "deck")} if tcfg.enabled else {}
         self.deck = DeckTracker(tcfg) if tcfg.enabled else None
@@ -89,6 +96,7 @@ class Pipeline:
         which the bridge (thin edges) and the boat model (small boats) both need. ``ais``:
         the latest ``AisSource.snapshot()``, when there is one."""
         from .bridge import measure_angle
+        from .gate import GateTracker, measure_gate
 
         t0 = time.perf_counter()
         self.last_t = t
@@ -109,6 +117,16 @@ class Pipeline:
             if changed:
                 events.append({"type": "bridge", "at": t, "leaf": which, "position": changed, "previous": before,
                                "angle_deg": tracker.state()["angle_deg"]})
+        if self.config.gate_detector.enabled:
+            # Every stage: small boxes, and an arm coming down is what starts the watch.
+            gcfg = self.config.gate_detector
+            for name in gate_rois(rois):
+                tracker = self.gates.setdefault(name, GateTracker(gcfg))
+                before = tracker.position
+                src = hires.grey() if hires is not None else frame
+                changed = tracker.update(t, measure_gate(src, rois[name], gcfg))
+                if changed:
+                    events.append({"type": "gate", "at": t, "gate": name, "position": changed, "previous": before})
         for name, watcher in self.watchers.items():
             if name not in rois:
                 continue
@@ -189,7 +207,13 @@ class Pipeline:
             elif positions:
                 leaves = "flat"
         boat = (self.boats is not None and self.boats.present) or bool(ais and ais.get("approaching"))
-        return StageInputs(lanes, leaves, boat)
+        return StageInputs(lanes, leaves, boat, self.gate_summary())
+
+    def gate_summary(self) -> str | None:
+        """"up", "down" or None (no gate box, or none readable)."""
+        from .gate import summary
+
+        return summary([tr.position for name, tr in self.gates.items() if name in self.rois])
 
     def signals(self, ais: dict[str, Any] | None = None):
         """What the state machine sees, built from the trackers."""
@@ -209,6 +233,7 @@ class Pipeline:
                 s.leaf_angles[which] = tr.angle
                 s.leaf_rates[which] = tr.rate
                 s.leaf_positions[which] = tr.position
+        s.gates = self.gate_summary()
         if self.boats is not None:
             b = self.boats.state()
             s.boat_present, s.boat_direction, s.boat_confidence = b["present"], b["direction"], b["confidence"]
@@ -233,6 +258,8 @@ class Pipeline:
             "bridge": self._leaf_state(self.bridge),
             "far_leaf": self._leaf_state(self.far_leaf),
             "traffic": {name: tr.state() for name, tr in self.lanes.items()},
+            "gates": {"summary": self.gate_summary(),
+                      "arms": {name: tr.state() for name, tr in self.gates.items() if name in self.rois}},
             "deck": self.deck.state() if self.deck else None,
             # Blobs in the lane and deck boxes, for the panel to draw (not published).
             "vehicles": [{"box": list(v.box), "moving": v.moving, "lane": name}
