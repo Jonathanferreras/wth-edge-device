@@ -119,6 +119,23 @@ def test_headlights_at_night_dont_read_as_down():
     assert tr.position == "unknown"
 
 
+def test_gate_goes_back_to_down_after_readings_that_cant_tell():
+    """11:13 clip, gate_2 at 472 s: sun and workers gave in-between readings for a while."""
+    from wth_edge.detectors.gate import GateReading
+
+    cfg = cfgmod.GateDetectorSection()
+    tr = GateTracker(cfg)
+    seq = [(GateReading(0.9, False, 0.8), 50), (GateReading(0.1, False, 0.1), 50),
+           (GateReading(0.4, False, 0.2), 100), (GateReading(0.1, False, 0.1), 50)]
+    t, seen = 0.0, []
+    for reading, n in seq:
+        for _ in range(n):
+            if (c := tr.update(t, reading)):
+                seen.append(c)
+            t += 0.2
+    assert seen == ["up", "down", "unknown", "down"]
+
+
 def test_gate_tracker_unknown_in_the_dark():
     cfg = cfgmod.GateDetectorSection()
     tr = GateTracker(cfg)

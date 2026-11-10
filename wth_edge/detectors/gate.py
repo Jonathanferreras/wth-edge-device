@@ -172,6 +172,8 @@ class GateTracker:
             self._angles.popleft()
         if pos is not None:
             self._last_found = t
+        if reading is None or reading.dark:
+            self._was_up = False
         if self._last_found is None or t - self._last_found > cfg.lost_s:
             target = "unknown"
         else:
@@ -189,7 +191,9 @@ class GateTracker:
             self._candidate, self._candidate_since = target, t
         if target == "unknown" or self.since is None or t - self._candidate_since >= cfg.hold_s:
             self.position, self.since, self._candidate = target, t, None
-            self._was_up = target == "up" or (target == "down" and self._was_up)
+            # "Seen up" survives a spell of readings that can't tell (sun, people in the
+            # box); darkness ends it, below.
+            self._was_up = self._was_up or target == "up"
             return target
         return None
 
