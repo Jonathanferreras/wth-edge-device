@@ -56,6 +56,7 @@ at its top-left corner:
 - deck: the roadway on the bridge span itself.
 - bridge, far_leaf: the two bridge leaves (the halves of the deck that lift to let boats through).
 - boat, boat_near: the river, where boats pass.
+- gate_1, gate_2, ...: the barrier arms (just context; nothing to label).
 
 You get two frames of the same view, A and then B, a couple of seconds apart. Judge only
 what is inside the named boxes, and compare A with B to tell moving from stopped.

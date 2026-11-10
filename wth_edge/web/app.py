@@ -134,6 +134,10 @@ def encode_jpeg(image, quality: int, rois: dict | None = None, det: dict | None 
                 if rois and name in rois and lane.get("level"):
                     box = rois[name].to_pixels(W, H)
                     d.text((box[0] + 4, box[3] - 12), f"{lane['level']} {lane.get('flow') or 0:.3f}", fill=DETECT_COLOUR)
+            for name, arm in ((det.get("gates") or {}).get("arms") or {}).items():
+                if rois and name in rois and arm.get("position") not in (None, "unknown"):
+                    box = rois[name].to_pixels(W, H)
+                    d.text((box[0], box[3] + 2), arm["position"], fill=DETECT_COLOUR)
             if (opening := det.get("opening")) and opening.get("phase"):
                 d.text((6, H - 14), f"{opening['phase']} · {opening.get('position', '')}", fill=DETECT_COLOUR)
             for box, colour, width, label in detections(det):
