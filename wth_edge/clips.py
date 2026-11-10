@@ -49,7 +49,10 @@ class ClipStore:
         if not ID_RE.match(clip_id):
             raise ValueError(f"bad clip id {clip_id!r}")
         d = self.dir_for(clip_id)
-        return {"video": d / f"{clip_id}.mp4", "meta": d / f"{clip_id}.json", "thumb": d / f"{clip_id}.jpg"}
+        # "trace": the detectors replayed over the clip for the panel (trace.py). Not .json,
+        # so iter_meta doesn't read it as a clip.
+        return {"video": d / f"{clip_id}.mp4", "meta": d / f"{clip_id}.json", "thumb": d / f"{clip_id}.jpg",
+                "trace": d / f"{clip_id}.trace"}
 
     # ---- metadata ----
     def write_meta(self, meta: dict[str, Any]) -> None:

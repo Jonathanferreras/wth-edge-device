@@ -38,9 +38,11 @@ class Device:
         self.store = ClipStore(config.paths.data_dir)
         self.camera.setup_recording(config.recording)
         self.recorder = Recorder(config, self.camera, self.store)
+        from .trace import Tracer
         from .tune.session import Tuner
 
         self.tuner = Tuner(config, self.recorder, self.store)
+        self.tracer = Tracer(config, self.store)
         self.detectors = None
         self.ais = None
         if config.ais.enabled:
@@ -221,6 +223,7 @@ class Device:
         if self.detectors is not None:
             self.detectors.stop()  # first, so nothing starts a new clip during shutdown
         self.tuner.close()
+        self.tracer.close()
         try:
             self.recorder.close()
         except Exception:
@@ -246,7 +249,7 @@ def run(config) -> int:
             from .web.app import create_app
 
             app = create_app(config, device.bus, device.get_state, recorder=device.recorder, store=device.store,
-                             tuner=device.tuner)
+                             tuner=device.tuner, tracer=device.tracer)
             server = device.server = uvicorn.Server(
                 uvicorn.Config(app, host=config.web.host, port=config.web.port, log_level="warning",
                                timeout_graceful_shutdown=2, access_log=False)
