@@ -16,6 +16,9 @@ Instead of measuring everything on every frame, the pipeline works in three stag
    flowing for ``resume_s`` -> ``traffic`` whatever the leaves read: a pole or a mast in
    the leaf box can look like a raised leaf, but cars can't drive over an open bridge.
 
+The barrier arms (``gate_*`` boxes, measured in every stage) coming down go straight from
+``traffic`` to ``watch``, and ``watch`` stays while they are down.
+
 Pure like ``Pipeline``: no threads, no clock, so ``wth-edge eval`` replays it. Without lane
 boxes there is no traffic to watch, so the machine stays in ``watch`` / ``track``.
 """
@@ -42,6 +45,8 @@ class StageInputs:
     leaves: str | None = None
     # A camera boat crossing in progress, or AIS reports one approaching.
     boat: bool = False
+    # The barrier arms: "up", "down", or None (no gate boxes, or none readable).
+    gates: str | None = None
 
 
 class StageMachine:
@@ -92,6 +97,8 @@ class StageMachine:
         lanes_readable = any(m is not None for m in s.lanes_moving.values())
 
         if self.stage == "traffic":
+            if s.gates == "down":
+                return [self._enter(t, "watch", "gates_down")]
             if not has_lanes:
                 return [self._enter(t, "watch", "no_lanes")]
             if self._stopped_since is not None and t - self._stopped_since >= cfg.stopped_s:
@@ -108,6 +115,8 @@ class StageMachine:
             if s.boat:
                 self.boat_seen = True
                 self._quiet_until = max(self._quiet_until or t, t + cfg.boat_quiet_s)
+            if s.gates == "down":
+                return []  # the arms are down: keep watching the leaves until they go up
             if not has_lanes or not lanes_readable:
                 return []  # nothing to go back to watching
             if self._moving_since is not None and t - self._moving_since >= cfg.resume_s:
